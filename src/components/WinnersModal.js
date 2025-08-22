@@ -130,8 +130,8 @@ TX: ${displayTxHash}
                         </div>
                         {postTitle && (
                             <div className="info-item">
-                                <span className="label">回复地址:</span>
-                                <span className="value post-title">https://www.v2ex.com/append/topic/{postUrl ? postUrl.match(/\/t\/(\d+)/)?.[1] || '未知' : '未知'}</span>
+                                <span className="label">帖子原地址:</span>
+                                <span className="value post-title">{postUrl ? postUrl : '未知'}</span>
                             </div>
                         )}
                     </div>
