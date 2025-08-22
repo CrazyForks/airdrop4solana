@@ -10,19 +10,15 @@ import FloatingToast from './components/FloatingToast';
 import V2exResultModal from './components/V2exResultModal';
 import ConfigModal from './components/ConfigModal';
 import FloatingLogPanel from './components/FloatingLogPanel';
-import AddressManagementTab from './components/AddressManagementTab';
 
 // 工具函数导入
 import { useWallet } from './hooks/useWallet';
 import { useLogger } from './hooks/useLogger';
 import { parseV2exPost } from './utils/v2ex';
-import { generateRandomAddresses, validateSolanaAddress } from './utils/solana';
 
 function App() {
   // 状态管理
   const [theme, setTheme] = useState('dark');
-  const [activeTab, setActiveTab] = useState('v2ex');
-  const [addressSource, setAddressSource] = useState('manual');
 
   // V2EX 相关状态
   const [v2exUrl, setV2exUrl] = useState('');
@@ -32,9 +28,7 @@ function App() {
 
   // 地址和空投相关状态
   const [targetAddresses, setTargetAddresses] = useState([]);
-  const [manualAddresses, setManualAddresses] = useState('');
   const [airdropAmount, setAirdropAmount] = useState('0.001');
-  const [airdropCount, setAirdropCount] = useState('100');
 
   // RPC端点状态
   const [rpcEndpoint, setRpcEndpoint] = useState(() => {
@@ -233,7 +227,6 @@ function App() {
     });
 
     setTargetAddresses(formattedAddresses);
-    setAddressSource('v2ex');
     addLog(`已应用 ${formattedAddresses.length} 个V2EX地址`, 'success');
     showMessage(`已成功添加 ${formattedAddresses.length} 个地址`, 'success');
 
@@ -243,66 +236,7 @@ function App() {
     }
   };
 
-  // 生成新地址
-  const handleGenerateNewAddresses = () => {
-    const count = parseInt(airdropCount) || 10;
-    if (count <= 0 || count > 1000) {
-      showMessage('地址数量必须在1-1000之间', 'warning');
-      return;
-    }
 
-    addLog(`开始生成 ${count} 个新地址...`, 'info');
-    const newAddresses = generateRandomAddresses(count);
-    setTargetAddresses(newAddresses);
-    addLog(`成功生成 ${count} 个新地址`, 'success');
-    showMessage(`成功生成 ${count} 个新地址`, 'success');
-  };
-
-  // 解析手动输入的地址
-  const parseManualAddresses = () => {
-    if (!manualAddresses.trim()) {
-      showMessage('请输入地址列表', 'warning');
-      return;
-    }
-
-    const lines = manualAddresses.trim().split('\n');
-    const validAddresses = [];
-    const invalidAddresses = [];
-
-    lines.forEach((line, index) => {
-      const trimmedLine = line.trim();
-      if (trimmedLine) {
-        if (validateSolanaAddress(trimmedLine)) {
-          validAddresses.push({
-            id: validAddresses.length + 1,
-            publicKey: trimmedLine,
-            privateKey: null,
-            isManual: true
-          });
-        } else {
-          invalidAddresses.push(`第${index + 1}行: ${trimmedLine}`);
-        }
-      }
-    });
-
-    if (invalidAddresses.length > 0) {
-      addLog(`发现 ${invalidAddresses.length} 个无效地址: ${invalidAddresses.join(', ')}`, 'warning');
-    }
-
-    if (validAddresses.length > 0) {
-      setTargetAddresses(validAddresses);
-      addLog(`成功解析 ${validAddresses.length} 个有效地址`, 'success');
-      showMessage(`成功添加 ${validAddresses.length} 个地址`, 'success');
-    } else {
-      showMessage('未找到有效的Solana地址', 'error');
-    }
-  };
-
-  // 清空手动输入
-  const clearManualAddresses = () => {
-    setManualAddresses('');
-    showMessage('已清空输入', 'info');
-  };
 
   // 执行批量空投
   const executeBatchAirdrop = async () => {
@@ -680,25 +614,7 @@ function App() {
     }
   };
 
-  // 导出目标地址
-  const exportTargetAddresses = () => {
-    if (targetAddresses.length === 0) {
-      showMessage('没有地址可导出', 'warning');
-      return;
-    }
 
-    const dataStr = JSON.stringify(targetAddresses, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `solana-addresses-${Date.now()}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-
-    addLog(`已导出 ${targetAddresses.length} 个地址到文件`, 'success');
-    showMessage('地址导出成功', 'success');
-  };
 
   return (
     <div className="container">
@@ -707,48 +623,58 @@ function App() {
       <main className="main-content" id="main-content">
         {/* 左侧主要内容区域 */}
         <div className="content-area">
-          {/* 功能标签页 */}
-          <div className="function-tabs">
-            <div className="tabs-container">
-              <button
-                className={`tab ${activeTab === 'v2ex' ? 'active' : ''}`}
-                onClick={() => setActiveTab('v2ex')}
-              >
-                <svg className="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-                V2EX
-              </button>
-              <button
-                className={`tab ${activeTab === 'airdrop' ? 'active' : ''}`}
-                onClick={() => setActiveTab('airdrop')}
-              >
-                <svg className="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
-                </svg>
-                批量空投
-              </button>
-              <button
-                className={`tab ${activeTab === 'recovery' ? 'active' : ''}`}
-                onClick={() => setActiveTab('recovery')}
-              >
-                <svg className="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12h18" />
-                  <path d="M3 6h18" />
-                  <path d="M3 18h18" />
-                </svg>
-                资金回收
-              </button>
-            </div>
-          </div>
+
 
           {/* V2EX 页面 - 3列布局 */}
-          {activeTab === 'v2ex' && (
-            <div className="three-column-layout">
-              {/* 第一列：V2EX 解析功能 */}
-              <div className="column">
+          <div className="three-column-layout">
+            {/* 第一列：V2EX 解析功能 */}
+            <div className="column">
+              <div className="feature-card">
+                <div className="feature-header">
+                  <div className="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </div>
+                  <h2 className="feature-title">从 V2EX 获取地址</h2>
+                </div>
+                <p className="feature-description">
+                  输入 V2EX 帖子链接或 ID，系统将自动解析并提取所有 Solana 地址和 .sol 域名
+                </p>
+
+                <div className="form-group">
+                  <label className="form-label">V2EX 帖子链接或 ID</label>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={v2exUrl}
+                      onChange={(e) => setV2exUrl(e.target.value)}
+                      placeholder="https://www.v2ex.com/t/12345 或 12345"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleParseV2exPost}
+                      disabled={!v2exUrl.trim() || v2exParsing}
+                    >
+                      {v2exParsing ? (
+                        <>
+                          <div className="loading"></div>
+                          解析中...
+                        </>
+                      ) : (
+                        '开始解析'
+                      )}
+                    </button>
+                  </div>
+
+
+                </div>
+              </div>
+
+              {/* 帖子信息卡片 - 在解析完成后显示 */}
+              {v2exParseResult && (
                 <div className="feature-card">
                   <div className="feature-header">
                     <div className="feature-icon">
@@ -756,528 +682,242 @@ function App() {
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                       </svg>
                     </div>
-                    <h2 className="feature-title">从 V2EX 获取地址</h2>
+                    <h2 className="feature-title">帖子信息</h2>
                   </div>
-                  <p className="feature-description">
-                    输入 V2EX 帖子链接或 ID，系统将自动解析并提取所有 Solana 地址和 .sol 域名
-                  </p>
 
-                  <div className="form-group">
-                    <label className="form-label">V2EX 帖子链接或 ID</label>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={v2exUrl}
-                        onChange={(e) => setV2exUrl(e.target.value)}
-                        placeholder="https://www.v2ex.com/t/12345 或 12345"
-                        style={{ flex: 1 }}
-                      />
-                      <button
-                        className="btn btn-primary"
-                        onClick={handleParseV2exPost}
-                        disabled={!v2exUrl.trim() || v2exParsing}
-                      >
-                        {v2exParsing ? (
-                          <>
-                            <div className="loading"></div>
-                            解析中...
-                          </>
-                        ) : (
-                          '开始解析'
-                        )}
-                      </button>
+                  <div className="post-info-section">
+                    <div className="post-basic-info">
+                      <div className="info-item">
+                        <span className="label">标题:</span>
+                        <span className="value">{v2exParseResult.title || '未知标题'}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="label">作者:</span>
+                        <span className="value">{v2exParseResult.author || '未知作者'}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="label">回复数:</span>
+                        <span className="value">{v2exParseResult.detailedReplies?.length || 0} 条</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="label">地址数:</span>
+                        <span className="value success">{v2exParseResult.addresses.length} 个</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="label">域名数:</span>
+                        <span className="value info">{v2exParseResult.domains.length} 个</span>
+                      </div>
                     </div>
 
-
-                  </div>
-                </div>
-
-                {/* 帖子信息卡片 - 在解析完成后显示 */}
-                {v2exParseResult && (
-                  <div className="feature-card">
-                    <div className="feature-header">
-                      <div className="feature-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                        </svg>
-                      </div>
-                      <h2 className="feature-title">帖子信息</h2>
-                    </div>
-
-                    <div className="post-info-section">
-                      <div className="post-basic-info">
-                        <div className="info-item">
-                          <span className="label">标题:</span>
-                          <span className="value">{v2exParseResult.title || '未知标题'}</span>
-                        </div>
-                        <div className="info-item">
-                          <span className="label">作者:</span>
-                          <span className="value">{v2exParseResult.author || '未知作者'}</span>
-                        </div>
-                        <div className="info-item">
-                          <span className="label">回复数:</span>
-                          <span className="value">{v2exParseResult.detailedReplies?.length || 0} 条</span>
-                        </div>
-                        <div className="info-item">
-                          <span className="label">地址数:</span>
-                          <span className="value success">{v2exParseResult.addresses.length} 个</span>
-                        </div>
-                        <div className="info-item">
-                          <span className="label">域名数:</span>
-                          <span className="value info">{v2exParseResult.domains.length} 个</span>
-                        </div>
-                      </div>
-
-                      {/* 抽奖配置信息 */}
-                      {addressSource === 'v2ex' && targetAddresses.length > 0 && (
-                        <div className="lottery-config-section">
-                          <h4 style={{ margin: '16px 0 12px 0', color: 'var(--text-primary)', fontSize: '14px' }}>
-                            🎲 抽奖配置信息
-                          </h4>
-                          <div className="lottery-config-info">
-                            <div className="info-item">
-                              <span className="label">抽奖方式:</span>
-                              <span className="value">
-                                {targetAddresses.length === v2exParseResult.addresses.length ? '全部地址' : '抽奖选择'}
-                              </span>
-                            </div>
-                            <div className="info-item">
-                              <span className="label">目标数量:</span>
-                              <span className="value">{targetAddresses.length} 个</span>
-                            </div>
-                            <div className="info-item">
-                              <span className="label">随机种子:</span>
-                              <span className="value">{Math.random().toString(36).substring(2, 8).toUpperCase()}</span>
-                            </div>
+                    {/* 抽奖配置信息 */}
+                    {targetAddresses.length > 0 && (
+                      <div className="lottery-config-section">
+                        <h4 style={{ margin: '16px 0 12px 0', color: 'var(--text-primary)', fontSize: '14px' }}>
+                          🎲 抽奖配置信息
+                        </h4>
+                        <div className="lottery-config-info">
+                          <div className="info-item">
+                            <span className="label">抽奖方式:</span>
+                            <span className="value">
+                              {targetAddresses.length === v2exParseResult.addresses.length ? '全部地址' : '抽奖选择'}
+                            </span>
+                          </div>
+                          <div className="info-item">
+                            <span className="label">目标数量:</span>
+                            <span className="value">{targetAddresses.length} 个</span>
+                          </div>
+                          <div className="info-item">
+                            <span className="label">随机种子:</span>
+                            <span className="value">{Math.random().toString(36).substring(2, 8).toUpperCase()}</span>
                           </div>
                         </div>
-                      )}
+                      </div>
+                    )}
 
-                      {/* 操作按钮组 */}
-                      <div className="view-result-section" style={{ marginTop: '20px' }}>
-                        <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => setShowV2exResultModal(true)}
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '16px', height: '16px', marginRight: '6px' }}>
-                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                              <circle cx="12" cy="12" r="3" />
-                            </svg>
-                            查看详情
-                          </button>
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => {
-                              setShowV2exResultModal(true);
-                              // 设置一个标记，表示这是抽奖操作
-                              setV2exParseResult(prev => ({ ...prev, isLotteryOperation: true }));
-                            }}
-                            title="进行抽奖操作"
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '16px', height: '16px', marginRight: '6px' }}>
-                              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                            </svg>
-                            抽奖操作
-                          </button>
-                        </div>
+                    {/* 操作按钮组 */}
+                    <div className="view-result-section" style={{ marginTop: '20px' }}>
+                      <div className="btn-group" style={{ display: 'flex', gap: '12px' }}>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => setShowV2exResultModal(true)}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '16px', height: '16px', marginRight: '6px' }}>
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                          查看详情
+                        </button>
+                        <button
+                          className="btn btn-primary"
+                          onClick={() => {
+                            // 检查钱包连接状态
+                            if (!userWallet || !userWallet.publicKey) {
+                              showMessage('请先连接钱包再进行抽奖操作', 'warning');
+                              addLog('用户尝试抽奖但钱包未连接', 'warning');
+                              return;
+                            }
+
+                            setShowV2exResultModal(true);
+                            // 设置一个标记，表示这是抽奖操作
+                            setV2exParseResult(prev => ({ ...prev, isLotteryOperation: true }));
+                          }}
+                          title="进行抽奖操作"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '16px', height: '16px', marginRight: '6px' }}>
+                            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                          </svg>
+                          抽奖操作
+                        </button>
                       </div>
                     </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 第二列：空投目标用户 */}
+            <div className="column">
+              <div className="feature-card">
+                <div className="feature-header">
+                  <div className="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                      <circle cx="9" cy="7" r="4" />
+                    </svg>
+                  </div>
+                  <h2 className="feature-title">空投目标用户</h2>
+                </div>
+                <p className="feature-description">
+                  当前即将接受空投的用户列表
+                </p>
+
+                {targetAddresses.length > 0 ? (
+                  <div className="airdrop-target-list">
+                    <div className="summary-item">
+                      <span className="label">目标用户数量:</span>
+                      <span className="value">{targetAddresses.length} 个</span>
+                    </div>
+                    <div className="summary-item">
+                      <span className="label">地址来源:</span>
+                      <span className="value">V2EX 解析</span>
+                    </div>
+
+                    {/* 用户列表显示 */}
+                    <div className="address-list-section">
+                      <h4 style={{ margin: '16px 0 12px 0', color: 'var(--text-primary)' }}>用户列表</h4>
+                      <div className="address-list">
+                        {targetAddresses.map((address, index) => (
+                          <div key={address.id || index} className="address-item">
+                            <span className="username">
+                              {address.username || `用户${index + 1}`}
+                            </span>
+                            <span className="separator">:</span>
+                            <span className="address">{address.publicKey}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 操作按钮 */}
+                    <div className="btn-group">
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => setTargetAddresses([])}
+                      >
+                        清空列表
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <p>请先解析 V2EX 帖子或添加目标地址</p>
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* 第二列：空投目标用户 */}
-              <div className="column">
-                <div className="feature-card">
-                  <div className="feature-header">
-                    <div className="feature-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                        <circle cx="9" cy="7" r="4" />
-                      </svg>
-                    </div>
-                    <h2 className="feature-title">空投目标用户</h2>
+            {/* 第三列：空投信息摘要和操作 */}
+            <div className="column">
+              <div className="feature-card">
+                <div className="feature-header">
+                  <div className="feature-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                      <path d="M2 17l10 5 10-5" />
+                      <path d="M2 12l10 5 10-5" />
+                    </svg>
                   </div>
-                  <p className="feature-description">
-                    当前即将接受空投的用户列表
-                  </p>
-
-                  {targetAddresses.length > 0 ? (
-                    <div className="airdrop-target-list">
-                      <div className="summary-item">
-                        <span className="label">目标用户数量:</span>
-                        <span className="value">{targetAddresses.length} 个</span>
-                      </div>
-                      <div className="summary-item">
-                        <span className="label">地址来源:</span>
-                        <span className="value">
-                          {addressSource === 'v2ex' ? 'V2EX 解析' :
-                            addressSource === 'manual' ? '手动输入' :
-                              addressSource === 'generate' ? '自动生成' : '文件导入'}
-                        </span>
-                      </div>
-
-                      {/* 用户列表显示 */}
-                      <div className="address-list-section">
-                        <h4 style={{ margin: '16px 0 12px 0', color: 'var(--text-primary)' }}>用户列表</h4>
-                        <div className="address-list">
-                          {targetAddresses.map((address, index) => (
-                            <div key={address.id || index} className="address-item">
-                              <span className="username">
-                                {address.username || `用户${index + 1}`}
-                              </span>
-                              <span className="separator">:</span>
-                              <span className="address">{address.publicKey}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* 操作按钮 */}
-                      <div className="btn-group">
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => setTargetAddresses([])}
-                        >
-                          清空列表
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="empty-state">
-                      <p>请先解析 V2EX 帖子或添加目标地址</p>
-                    </div>
-                  )}
+                  <h2 className="feature-title">空投信息摘要</h2>
                 </div>
-              </div>
+                <p className="feature-description">
+                  当前空投配置和状态信息
+                </p>
 
-              {/* 第三列：空投信息摘要和操作 */}
-              <div className="column">
-                <div className="feature-card">
-                  <div className="feature-header">
-                    <div className="feature-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                        <path d="M2 17l10 5 10-5" />
-                        <path d="M2 12l10 5 10-5" />
-                      </svg>
-                    </div>
-                    <h2 className="feature-title">空投信息摘要</h2>
-                  </div>
-                  <p className="feature-description">
-                    当前空投配置和状态信息
-                  </p>
+                <div className="form-group">
+                  <label className="form-label">单个空投金额 (SOL)</label>
+                  <input
+                    type="number"
+                    className="form-control"
+                    value={airdropAmount}
+                    onChange={(e) => setAirdropAmount(e.target.value)}
+                    placeholder="0.01"
+                    step="0.01"
+                    min="0"
+                  />
+                </div>
 
-                  <div className="form-group">
-                    <label className="form-label">单个空投金额 (SOL)</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={airdropAmount}
-                      onChange={(e) => setAirdropAmount(e.target.value)}
-                      placeholder="0.01"
-                      step="0.01"
-                      min="0"
-                    />
+                <div className="airdrop-summary">
+                  <div className="summary-item">
+                    <span className="label">目标地址数量:</span>
+                    <span className="value">{targetAddresses.length} 个</span>
                   </div>
+                  <div className="summary-item">
+                    <span className="label">单个空投金额:</span>
+                    <span className="value">{airdropAmount} SOL</span>
+                  </div>
+                  <div className="summary-item">
+                    <span className="label">空投总价值:</span>
+                    <span className="value">
+                      {targetAddresses.length > 0 ? (parseFloat(airdropAmount || 0) * targetAddresses.length).toFixed(6) : '0'} SOL
+                    </span>
+                  </div>
+                  <div className="summary-item">
+                    <span className="label">钱包状态:</span>
+                    <span className={`value ${userWallet ? 'success' : 'error'}`}>
+                      {userWallet ? '已连接' : '未连接'}
+                    </span>
+                  </div>
+                </div>
 
-                  <div className="airdrop-summary">
-                    <div className="summary-item">
-                      <span className="label">目标地址数量:</span>
-                      <span className="value">{targetAddresses.length} 个</span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="label">单个空投金额:</span>
-                      <span className="value">{airdropAmount} SOL</span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="label">空投总价值:</span>
-                      <span className="value">
-                        {targetAddresses.length > 0 ? (parseFloat(airdropAmount || 0) * targetAddresses.length).toFixed(6) : '0'} SOL
-                      </span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="label">钱包状态:</span>
-                      <span className={`value ${userWallet ? 'success' : 'error'}`}>
-                        {userWallet ? '已连接' : '未连接'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="btn-group">
-                    <button
-                      className="btn btn-primary btn-lg"
-                      onClick={executeBatchAirdrop}
-                      disabled={!userWallet || targetAddresses.length === 0 || !airdropAmount || parseFloat(airdropAmount) <= 0}
-                    >
-                      <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                        <path d="M2 17l10 5 10-5" />
-                        <path d="M2 12l10 5 10-5" />
-                      </svg>
-                      启动空投
-                    </button>
-                  </div>
+                <div className="btn-group">
+                  <button
+                    className="btn btn-primary btn-lg"
+                    onClick={() => {
+                      // 检查钱包连接状态
+                      if (!userWallet || !userWallet.publicKey) {
+                        showMessage('请先连接钱包再执行空投', 'warning');
+                        addLog('用户尝试空投但钱包未连接', 'warning');
+                        return;
+                      }
+                      executeBatchAirdrop();
+                    }}
+                    disabled={!userWallet || targetAddresses.length === 0 || !airdropAmount || parseFloat(airdropAmount) <= 0}
+                  >
+                    <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                      <path d="M2 17l10 5 10-5" />
+                      <path d="M2 12l10 5 10-5" />
+                    </svg>
+                    启动空投
+                  </button>
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* 批量空投页面 - 3列布局 */}
-          {activeTab === 'airdrop' && (
-            <div className="three-column-layout">
-              {/* 第一列：地址管理功能 */}
-              <div className="column">
-                <AddressManagementTab
-                  addressSource={addressSource}
-                  setAddressSource={setAddressSource}
-                  manualAddresses={manualAddresses}
-                  setManualAddresses={setManualAddresses}
-                  airdropCount={airdropCount}
-                  setAirdropCount={setAirdropCount}
-                  targetAddresses={targetAddresses}
-                  onGenerateNewAddresses={handleGenerateNewAddresses}
-                  onParseManualAddresses={parseManualAddresses}
-                  onClearManualAddresses={clearManualAddresses}
-                  onExportTargetAddresses={exportTargetAddresses}
-                />
-              </div>
 
-              {/* 第二列：目标地址相关操作 */}
-              <div className="column">
-                <div className="feature-card">
-                  <div className="feature-header">
-                    <div className="feature-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                        <circle cx="9" cy="7" r="4" />
-                      </svg>
-                    </div>
-                    <h2 className="feature-title">地址操作</h2>
-                  </div>
-                  <p className="feature-description">
-                    对目标地址列表进行操作和管理
-                  </p>
 
-                  {targetAddresses.length > 0 ? (
-                    <div className="address-operations">
-                      <div className="summary-item">
-                        <span className="label">当前地址:</span>
-                        <span className="value">{targetAddresses.length} 个</span>
-                      </div>
-                      <div className="summary-item">
-                        <span className="label">来源类型:</span>
-                        <span className="value">
-                          {addressSource === 'manual' ? '手动输入' :
-                            addressSource === 'generate' ? '自动生成' :
-                              addressSource === 'import' ? '文件导入' : 'V2EX解析'}
-                        </span>
-                      </div>
-                      <div className="btn-group">
-                        <button
-                          className="btn btn-secondary"
-                          onClick={exportTargetAddresses}
-                        >
-                          导出地址列表
-                        </button>
-                        <button
-                          className="btn btn-secondary"
-                          onClick={() => setTargetAddresses([])}
-                        >
-                          清空地址列表
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="empty-state">
-                      <p>请先选择地址来源并添加目标地址</p>
-                    </div>
-                  )}
-                </div>
-              </div>
 
-              {/* 第三列：空投信息摘要和操作 */}
-              <div className="column">
-                <div className="feature-card">
-                  <div className="feature-header">
-                    <div className="feature-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                        <path d="M2 17l10 5 10-5" />
-                        <path d="M2 12l10 5 10-5" />
-                      </svg>
-                    </div>
-                    <h2 className="feature-title">空投设置</h2>
-                  </div>
-                  <p className="feature-description">
-                    配置空投参数和执行空投操作
-                  </p>
-
-                  <div className="form-group">
-                    <label className="form-label">单个空投金额 (SOL)</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={airdropAmount}
-                      onChange={(e) => setAirdropAmount(e.target.value)}
-                      placeholder="0.01"
-                      step="0.01"
-                      min="0"
-                    />
-                  </div>
-
-                  {/* 执行摘要 */}
-                  <div className="airdrop-summary">
-                    <div className="summary-item">
-                      <span className="label">目标地址数量:</span>
-                      <span className="value">{targetAddresses.length} 个</span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="label">单个空投金额:</span>
-                      <span className="value">{airdropAmount} SOL</span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="label">空投总价值:</span>
-                      <span className="value">
-                        {targetAddresses.length > 0 ? (parseFloat(airdropAmount || 0) * targetAddresses.length).toFixed(6) : '0'} SOL
-                      </span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="label">钱包状态:</span>
-                      <span className={`value ${userWallet ? 'success' : 'error'}`}>
-                        {userWallet ? '已连接' : '未连接'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="btn-group">
-                    <button
-                      className="btn btn-primary btn-lg"
-                      onClick={executeBatchAirdrop}
-                      disabled={!userWallet || targetAddresses.length === 0 || !airdropAmount || parseFloat(airdropAmount) <= 0}
-                    >
-                      <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                        <path d="M2 17l10 5 10-5" />
-                        <path d="M2 12l10 5 10-5" />
-                      </svg>
-                      启动空投
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 资金回收页面 - 3列布局 */}
-          {activeTab === 'recovery' && (
-            <div className="three-column-layout">
-              {/* 第一列：资金回收功能 */}
-              <div className="column">
-                <div className="feature-card">
-                  <div className="feature-header">
-                    <div className="feature-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 12h18" />
-                        <path d="M3 6h18" />
-                        <path d="M3 18h18" />
-                      </svg>
-                    </div>
-                    <h2 className="feature-title">资金回收</h2>
-                  </div>
-                  <p className="feature-description">
-                    批量回收之前空投地址中的剩余资金
-                  </p>
-
-                  <div className="form-group">
-                    <label className="form-label">选择地址文件</label>
-                    <input
-                      type="file"
-                      className="form-control"
-                      accept=".json"
-                      onChange={() => { }} // TODO: 实现文件导入功能
-                    />
-                    <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '8px' }}>
-                      选择之前导出的地址 JSON 文件进行批量回收
-                    </p>
-                  </div>
-
-                  <div className="btn-group">
-                    <button className="btn btn-secondary" disabled>
-                      检查余额
-                    </button>
-                    <button className="btn btn-primary" disabled>
-                      批量回收
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* 第二列：回收地址管理 */}
-              <div className="column">
-                <div className="feature-card">
-                  <div className="feature-header">
-                    <div className="feature-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                        <circle cx="9" cy="7" r="4" />
-                      </svg>
-                    </div>
-                    <h2 className="feature-title">回收地址管理</h2>
-                  </div>
-                  <p className="feature-description">
-                    管理需要回收资金的地址列表
-                  </p>
-
-                  <div className="empty-state">
-                    <p>请先选择地址文件进行导入</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* 第三列：回收信息摘要 */}
-              <div className="column">
-                <div className="feature-card">
-                  <div className="feature-header">
-                    <div className="feature-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                        <path d="M2 17l10 5 10-5" />
-                        <path d="M2 12l10 5 10-5" />
-                      </svg>
-                    </div>
-                    <h2 className="feature-title">回收信息摘要</h2>
-                  </div>
-                  <p className="feature-description">
-                    当前回收配置和状态信息
-                  </p>
-
-                  <div className="airdrop-summary">
-                    <div className="summary-item">
-                      <span className="label">回收地址:</span>
-                      <span className="value">0 个</span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="label">钱包状态:</span>
-                      <span className={`value ${userWallet ? 'success' : 'error'}`}>
-                        {userWallet ? '已连接' : '未连接'}
-                      </span>
-                    </div>
-                    <div className="summary-item">
-                      <span className="label">功能状态:</span>
-                      <span className="value error">开发中</span>
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: '24px', padding: '16px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', color: 'var(--text-muted)', textAlign: 'center', fontStyle: 'italic' }}>
-                    功能开发中，敬请期待...
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* 右侧面板 - 已移除钱包状态，日志面板移至悬浮显示 */}
@@ -1314,6 +954,8 @@ function App() {
           onAddLog={addLog}
           onShowMessage={showMessage}
           defaultShowLottery={v2exParseResult?.isLotteryOperation || false}
+          userWallet={userWallet}
+          rpcEndpoint={rpcEndpoint}
         />
       )}
 

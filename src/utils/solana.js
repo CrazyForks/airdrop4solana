@@ -185,31 +185,4 @@ export const lamportsToSol = (lamports) => {
   return (lamports / LAMPORTS_PER_SOL).toFixed(6);
 };
 
-// 生成随机Solana地址
-export const generateRandomAddresses = (count) => {
-  const addresses = [];
-  for (let i = 0; i < count; i++) {
-    const keypair = Keypair.generate();
-    addresses.push({
-      id: i + 1,
-      publicKey: keypair.publicKey.toString(),
-      privateKey: bs58.encode(keypair.secretKey),
-      isGenerated: true
-    });
-  }
-  return addresses;
-};
 
-// 验证Solana地址格式
-export const validateSolanaAddress = (address) => {
-  if (!address || typeof address !== 'string') {
-    return false;
-  }
-
-  try {
-    new PublicKey(address);
-    return true;
-  } catch (error) {
-    return false;
-  }
-};

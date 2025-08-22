@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { drawUsers, validateDrawOptions } from '../utils/lottery';
+import { drawUsers } from '../utils/lottery';
 import { batchParseUserInfo } from '../utils/v2ex';
+import TipModal from './TipModal';
 
-const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMessage, defaultShowLottery = false }) => {
-  const [showLotterySection, setShowLotterySection] = useState(false);
+const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMessage, defaultShowLottery = false, userWallet, rpcEndpoint }) => {
   const [showLotterySettings, setShowLotterySettings] = useState(defaultShowLottery);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [selectionCount, setSelectionCount] = useState(10);
@@ -11,6 +11,10 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
   const [parsingAddresses, setParsingAddresses] = useState(false);
   const [parsingProgress, setParsingProgress] = useState({ current: 0, total: 0, percentage: 0 });
   const [isPostContentExpanded, setIsPostContentExpanded] = useState(false);
+
+  // 打赏相关状态
+  const [showTipModal, setShowTipModal] = useState(false);
+  const [lotterySeed, setLotterySeed] = useState(null);
 
   // 根据回复数量动态设置选择数量的默认值
   useEffect(() => {
@@ -25,19 +29,47 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
   // 检查帖子内容是否超过4行
   const isPostContentLong = result?.content && result.content.split('\n').length > 4;
 
-  // 抽奖功能
+  // 抽奖功能 - 先显示打赏菜单
   const handleRandomSelection = useCallback(() => {
+    // 检查钱包连接状态
+    if (!userWallet || !userWallet.publicKey) {
+      onShowMessage('请先连接钱包再进行抽奖操作', 'warning');
+      onAddLog('用户尝试抽奖但钱包未连接', 'warning');
+      return;
+    }
+
     if (!result?.detailedReplies || result.detailedReplies.length === 0) {
       onShowMessage('没有可用的回复进行抽奖', 'warning');
       return;
     }
+    // 先显示打赏菜单
+    setShowTipModal(true);
+  }, [result?.detailedReplies, onShowMessage, userWallet, onAddLog]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 处理打赏完成
+  const handleTipComplete = useCallback((seed, tipType) => {
+    setLotterySeed(seed);
+    setShowTipModal(false);
+
+    // 记录随机种子信息
+    onAddLog(`随机种子: ${seed}`, 'info');
+
+    // 显示抽奖设置
     setShowLotterySettings(true);
-  }, [result?.detailedReplies, onShowMessage]);
+  }, [onAddLog]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 执行抽奖选择
   const executeRandomSelection = useCallback(() => {
     if (!result?.detailedReplies || result.detailedReplies.length === 0) {
       onShowMessage('没有可用的回复进行抽奖', 'warning');
+      return;
+    }
+
+    // 检查是否已经完成打赏流程（有随机种子）
+    if (!lotterySeed) {
+      onShowMessage('请先完成打赏再开始抽奖', 'warning');
+      // 重新显示打赏界面
+      setShowTipModal(true);
       return;
     }
 
@@ -68,12 +100,12 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
         return;
       }
 
-      // 使用抽奖工具类，排除帖子作者
+      // 使用抽奖工具类，排除帖子作者，使用打赏设置的种子
       const selected = drawUsers({
         allUsers: allUsers,
         excludeUsers: excludeUsers,
         count: selectionCount,
-        seed: null
+        seed: lotterySeed
       });
 
       setSelectedUsers(selected);
@@ -87,7 +119,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
       onAddLog(`抽奖失败: ${error.message}`, 'error');
       onShowMessage(`抽奖失败: ${error.message}`, 'error');
     }
-  }, [result?.detailedReplies, result?.author, selectionCount, excludePostAuthor, onAddLog, onShowMessage]);
+  }, [result?.detailedReplies, result?.author, selectionCount, excludePostAuthor, lotterySeed, onAddLog, onShowMessage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 解析没有 Solana 地址的用户
   const parseMissingAddresses = useCallback(async () => {
@@ -242,7 +274,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
   // 重置抽奖结果
   const resetLotteryResult = () => {
     setSelectedUsers([]);
-    setShowLotterySection(false);
+    setShowLotterySettings(false);
     onAddLog('🔄 抽奖结果已重置', 'info');
   };
 
@@ -266,12 +298,16 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
     }
   };
 
-  // 当defaultShowLottery为true时，只在初始化时自动显示抽奖设置
+  // 当defaultShowLottery为true时，需要先完成打赏流程
   useEffect(() => {
-    if (defaultShowLottery) {
+    if (defaultShowLottery && !lotterySeed) {
+      // 如果是抽奖操作进入但还没有完成打赏，显示打赏界面
+      setShowTipModal(true);
+    } else if (defaultShowLottery && lotterySeed) {
+      // 如果已经完成打赏，显示抽奖设置
       setShowLotterySettings(true);
     }
-  }, [defaultShowLottery]); // 移除showLotterySettings依赖，避免循环触发
+  }, [defaultShowLottery, lotterySeed]);
 
   // 在所有 hooks 调用之后进行条件渲染检查
   if (!result) return null;
@@ -549,7 +585,19 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                     </div>
                   </div>
                   <div className="lottery-settings-actions">
-                    <button className="btn btn-primary" onClick={executeRandomSelection}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => {
+                        // 检查是否已经完成打赏流程
+                        if (!lotterySeed) {
+                          onShowMessage('请先完成打赏再开始抽奖', 'warning');
+                          setShowLotterySettings(false);
+                          setShowTipModal(true);
+                          return;
+                        }
+                        executeRandomSelection();
+                      }}
+                    >
                       开始抽奖
                     </button>
                     <button className="btn btn-outline" onClick={() => {
@@ -589,7 +637,18 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
 
             {/* 抽奖操作按钮 - 只在没有抽奖结果时显示 */}
             {selectedUsers.length === 0 && (
-              <button className="btn btn-secondary" onClick={handleRandomSelection}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  // 检查是否已经完成打赏流程
+                  if (!lotterySeed) {
+                    onShowMessage('请先完成打赏再开始抽奖', 'warning');
+                    setShowTipModal(true);
+                    return;
+                  }
+                  handleRandomSelection();
+                }}
+              >
                 <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 2L2 7l10 5 10-5-10-5z" />
                   <path d="M2 17l10 5 10-5" />
@@ -669,6 +728,17 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
 
         </div>
       </div>
+
+      {/* 打赏模态框 */}
+      <TipModal
+        isOpen={showTipModal}
+        onClose={() => setShowTipModal(false)}
+        onTipComplete={handleTipComplete}
+        userWallet={userWallet}
+        rpcEndpoint={rpcEndpoint}
+        onAddLog={onAddLog}
+        onShowMessage={onShowMessage}
+      />
     </div>
   );
 };
