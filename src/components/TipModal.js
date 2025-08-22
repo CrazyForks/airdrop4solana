@@ -9,7 +9,7 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
     const [randomTreat, setRandomTreat] = useState(null);
 
     // Joe的收款地址 - 这里需要设置实际的地址
-    const JOE_RECEIVER_ADDRESS = '11111111111111111111111111111112'; // 开发环境测试地址，请替换为实际地址
+    const JOE_RECEIVER_ADDRESS = 'H5uYBn9MSrMTEz9deLDGBe9eczsfzXjZjX1xVcB6FJgU';
 
     // 根据金额获取Joe的动作
     const getJoeActionByAmount = (amount) => {

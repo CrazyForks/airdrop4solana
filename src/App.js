@@ -10,6 +10,7 @@ import FloatingToast from './components/FloatingToast';
 import V2exResultModal from './components/V2exResultModal';
 import ConfigModal from './components/ConfigModal';
 import FloatingLogPanel from './components/FloatingLogPanel';
+import WinnersModal from './components/WinnersModal';
 
 // 工具函数导入
 import { useWallet } from './hooks/useWallet';
@@ -30,11 +31,20 @@ function App() {
   const [targetAddresses, setTargetAddresses] = useState([]);
   const [airdropAmount, setAirdropAmount] = useState('0.001');
 
+  // 中奖人弹窗状态
+  const [showWinnersModal, setShowWinnersModal] = useState(false);
+  const [winnersInfo, setWinnersInfo] = useState({
+    winners: [],
+    transactionHash: '',
+    postUrl: '',
+    postTitle: ''
+  });
+
   // RPC端点状态
   const [rpcEndpoint, setRpcEndpoint] = useState(() => {
     // 从localStorage读取保存的RPC端点，如果没有则使用默认值
     const saved = localStorage.getItem('solana-rpc-endpoint');
-    return saved || 'https://api.mainnet-beta.solana.com';
+    return saved || 'https://solana-rpc.publicnode.com';
   });
 
   // 调试模式
@@ -397,6 +407,7 @@ function App() {
       let successCount = 0;
       let failCount = 0;
       let processedCount = 0;
+      let lastSuccessfulTransactionHash = '';
 
       for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
         const { addresses: batchAddresses } = preparedBatches[batchIndex];
@@ -488,6 +499,7 @@ function App() {
           });
 
           successCount += batchAddresses.length;
+          lastSuccessfulTransactionHash = signatureStr; // 保存最后成功的交易哈希
           console.log(`✅ 第 ${batchIndex + 1} 批次交易确认成功！TX哈希:`, signatureStr);
           addLog(`第 ${batchIndex + 1} 批次交易确认成功！TX: ${signatureStr}`, 'success');
 
@@ -508,6 +520,7 @@ function App() {
                 console.log(`✅ 第 ${batchIndex + 1} 批次交易状态检查成功！TX哈希:`, signatureStr);
                 addLog(`第 ${batchIndex + 1} 批次交易状态检查成功，已确认！TX: ${signatureStr}`, 'success');
                 successCount += batchAddresses.length;
+                lastSuccessfulTransactionHash = signatureStr; // 保存最后成功的交易哈希
 
                 // 显示状态检查成功通知
                 if (batchCount > 1) {
@@ -565,6 +578,28 @@ function App() {
       addLog(`📊 空投统计: ${successNotification.content}`, 'success');
       addLog(`💰 总金额: ${successNotification.details}`, 'success');
       addLog(`🔗 查看交易: ${successNotification.explorer}`, 'info');
+
+      // 显示中奖人弹窗（如果有成功的地址）
+      if (successCount > 0) {
+        // 准备中奖人信息
+        const successfulAddresses = resolvedAddresses.slice(0, successCount);
+        const winnersData = successfulAddresses.map(addr => ({
+          username: addr.username || `用户${successfulAddresses.indexOf(addr) + 1}`,
+          address: addr.publicKey
+        }));
+
+        // 设置中奖人信息并显示弹窗
+        setWinnersInfo({
+          winners: winnersData,
+          transactionHash: lastSuccessfulTransactionHash,
+          postUrl: v2exParseResult?.sourceUrl || '',
+          postTitle: v2exParseResult?.title || 'V2EX帖子'
+        });
+        setShowWinnersModal(true);
+
+        addLog(`🎯 显示中奖人信息弹窗，中奖用户: ${winnersData.length} 个`, 'info');
+        addLog(`📋 交易哈希: ${lastSuccessfulTransactionHash}`, 'info');
+      }
 
     } catch (error) {
       console.error('批量空投失败:', error);
@@ -965,6 +1000,17 @@ function App() {
         onClose={() => setIsConfigModalOpen(false)}
         currentRpcEndpoint={rpcEndpoint}
         onSaveConfig={handleSaveConfig}
+      />
+
+      {/* 中奖人信息弹窗 */}
+      <WinnersModal
+        isOpen={showWinnersModal}
+        onClose={() => setShowWinnersModal(false)}
+        winners={winnersInfo.winners}
+        transactionHash={winnersInfo.transactionHash}
+        postUrl={winnersInfo.postUrl}
+        postTitle={winnersInfo.postTitle}
+        onAddLog={addLog}
       />
     </div>
   );

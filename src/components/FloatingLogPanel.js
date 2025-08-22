@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 const FloatingLogPanel = ({ logs, clearLogs, exportLogs }) => {
   const [copiedIndex, setCopiedIndex] = useState(-1);
+  const [showAllLogs, setShowAllLogs] = useState(false);
 
   // 检测是否为哈希值（长度大于40且只包含字母数字的字符串）
   const isHashValue = (text) => {
@@ -96,7 +97,7 @@ const FloatingLogPanel = ({ logs, clearLogs, exportLogs }) => {
             </div>
           ) : (
             <div className="log-entries">
-              {logs.slice(-50).map((log, index) => {
+              {(showAllLogs ? logs : logs.slice(-50)).map((log, index) => {
                 const hash = extractHashFromMessage(log.message);
 
                 return (
@@ -126,6 +127,24 @@ const FloatingLogPanel = ({ logs, clearLogs, exportLogs }) => {
                   </div>
                 );
               })}
+
+              {/* 日志数量提示和控制 */}
+              {logs.length > 50 && (
+                <div className="log-controls-footer">
+                  <div className="log-info">
+                    {showAllLogs
+                      ? `显示全部 ${logs.length} 条日志`
+                      : `显示最近 50 条日志，共 ${logs.length} 条`
+                    }
+                  </div>
+                  <button
+                    className="btn btn-secondary toggle-logs-btn"
+                    onClick={() => setShowAllLogs(!showAllLogs)}
+                  >
+                    {showAllLogs ? '收起日志' : '查看全部'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

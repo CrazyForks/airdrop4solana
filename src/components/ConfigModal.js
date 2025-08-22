@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Connection } from '@solana/web3.js';
 
 const ConfigModal = ({ isOpen, onClose, currentRpcEndpoint, onSaveConfig }) => {
-    const [network, setNetwork] = useState('mainnet-beta');
-    const [rpcEndpoint, setRpcEndpoint] = useState(currentRpcEndpoint || 'https://api.mainnet-beta.solana.com');
+    const [rpcEndpoint, setRpcEndpoint] = useState(currentRpcEndpoint || 'https://solana-rpc.publicnode.com');
     const [commitment, setCommitment] = useState('confirmed');
+    const [isTestingConnection, setIsTestingConnection] = useState(false);
 
     // 当模态框打开时，同步当前配置
     useEffect(() => {
         if (isOpen) {
-            setRpcEndpoint(currentRpcEndpoint || 'https://api.mainnet-beta.solana.com');
+            setRpcEndpoint(currentRpcEndpoint || 'https://solana-rpc.publicnode.com');
         }
     }, [isOpen, currentRpcEndpoint]);
 
@@ -17,7 +17,7 @@ const ConfigModal = ({ isOpen, onClose, currentRpcEndpoint, onSaveConfig }) => {
 
     const handleSave = () => {
         // 保存配置到父组件
-        onSaveConfig({ network, rpcEndpoint, commitment });
+        onSaveConfig({ rpcEndpoint, commitment });
         onClose();
     };
 
@@ -35,29 +35,43 @@ const ConfigModal = ({ isOpen, onClose, currentRpcEndpoint, onSaveConfig }) => {
 
                 <div className="config-modal-content">
                     <div className="form-group">
-                        <label className="form-label">网络选择</label>
-                        <select
-                            className="form-control"
-                            value={network}
-                            onChange={(e) => {
-                                const selectedNetwork = e.target.value;
-                                setNetwork(selectedNetwork);
-                                
-                                // 根据网络选择自动设置RPC端点
-                                const endpoints = {
-                                    'mainnet-beta': 'https://api.mainnet-beta.solana.com',
-                                    'testnet': 'https://api.testnet.solana.com',
-                                    'devnet': 'https://api.devnet.solana.com',
-                                    'localnet': 'http://127.0.0.1:8899'
-                                };
-                                setRpcEndpoint(endpoints[selectedNetwork] || endpoints['mainnet-beta']);
-                            }}
-                        >
-                            <option value="mainnet-beta">主网 (Mainnet Beta)</option>
-                            <option value="testnet">测试网 (Testnet)</option>
-                            <option value="devnet">开发网 (Devnet)</option>
-                            <option value="localnet">本地网 (Localnet)</option>
-                        </select>
+                        <label className="form-label">预设网络</label>
+                        <div className="preset-networks">
+                            <button
+                                type="button"
+                                className={`btn btn-secondary ${rpcEndpoint === 'https://solana-rpc.publicnode.com' ? 'active' : ''}`}
+                                onClick={() => setRpcEndpoint('https://solana-rpc.publicnode.com')}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}>
+                                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                                    <path d="M2 17l10 5 10-5" />
+                                    <path d="M2 12l10 5 10-5" />
+                                </svg>
+                                主网: https://solana-rpc.publicnode.com
+                            </button>
+                            <button
+                                type="button"
+                                className={`btn btn-secondary ${rpcEndpoint === 'https://api.devnet.solana.com' ? 'active' : ''}`}
+                                onClick={() => setRpcEndpoint('https://api.devnet.solana.com')}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}>
+                                    <path d="M9 12l2 2 4-4" />
+                                    <path d="M21 12c-1 0-2-.5-2-1.5V5c0-1.5 1-2.5 2-2.5s2 1 2 2.5v5.5c0 1-1 1.5-2 1.5z" />
+                                    <path d="M3 12c1 0 2-.5 2-1.5V5c0-1.5-1-2.5-2-2.5S1 3.5 1 5v5.5c0 1 1 1.5 2 1.5z" />
+                                </svg>
+                                Dev: https://api.devnet.solana.com
+                            </button>
+                            <button
+                                type="button"
+                                className={`btn btn-secondary ${rpcEndpoint === 'https://api.testnet.solana.com' ? 'active' : ''}`}
+                                onClick={() => setRpcEndpoint('https://api.testnet.solana.com')}
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}>
+                                    <path d="M12 2v6m0 0l4-4m-4 4L8 8m12 4v6m0 0l-4-4m4 4l4-4M6 12v6m0 0L2 16m4 4l4-4" />
+                                </svg>
+                                Test: https://api.testnet.solana.com
+                            </button>
+                        </div>
                     </div>
 
                     <div className="form-group">
@@ -73,16 +87,37 @@ const ConfigModal = ({ isOpen, onClose, currentRpcEndpoint, onSaveConfig }) => {
                             />
                             <button
                                 type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => {
-                                    const connection = new Connection(rpcEndpoint, 'confirmed');
-                                    connection.getLatestBlockhash()
-                                        .then(() => alert('RPC连接测试成功！'))
-                                        .catch(err => alert(`RPC连接失败: ${err.message}`));
+                                className={`btn btn-secondary ${isTestingConnection ? 'loading' : ''}`}
+                                onClick={async () => {
+                                    setIsTestingConnection(true);
+                                    try {
+                                        const connection = new Connection(rpcEndpoint, 'confirmed');
+                                        await connection.getLatestBlockhash();
+                                        alert('RPC连接测试成功！');
+                                    } catch (err) {
+                                        alert(`RPC连接失败: ${err.message}`);
+                                    } finally {
+                                        setIsTestingConnection(false);
+                                    }
                                 }}
-                                style={{ whiteSpace: 'nowrap' }}
+                                disabled={isTestingConnection}
+                                style={{ whiteSpace: 'nowrap', minWidth: '120px' }}
                             >
-                                测试连接
+                                {isTestingConnection ? (
+                                    <>
+                                        <span className="loading-spinner-small"></span>
+                                        测试中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}>
+                                            <path d="M9 12l2 2 4-4" />
+                                            <path d="M21 12c-1 0-2-.5-2-1.5V5c0-1.5 1-2.5 2-2.5s2 1 2 2.5v5.5c0 1-1 1.5-2 1.5z" />
+                                            <path d="M3 12c1 0 2-.5 2-1.5V5c0-1.5-1-2.5-2-2.5S1 3.5 1 5v5.5c0 1 1 1.5 2 1.5z" />
+                                        </svg>
+                                        测试连接
+                                    </>
+                                )}
                             </button>
                         </div>
                         <small className="help-text">
@@ -106,32 +141,7 @@ const ConfigModal = ({ isOpen, onClose, currentRpcEndpoint, onSaveConfig }) => {
                         </small>
                     </div>
 
-                    <div className="form-group">
-                        <label className="form-label">预设端点</label>
-                        <div className="preset-endpoints">
-                            <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => setRpcEndpoint('https://api.mainnet-beta.solana.com')}
-                            >
-                                官方主网
-                            </button>
-                            <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => setRpcEndpoint('https://solana-api.projectserum.com')}
-                            >
-                                Project Serum
-                            </button>
-                            <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => setRpcEndpoint('https://rpc.ankr.com/solana')}
-                            >
-                                Ankr
-                            </button>
-                        </div>
-                    </div>
+
                 </div>
 
                 <div className="config-modal-footer">
