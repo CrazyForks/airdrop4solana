@@ -12,7 +12,7 @@
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "react-scripts": "5.0.1",
-        "v2ex-api-parser": "file:/Users/joe/Documents/Work/Github/v2ex_api_parser",
+        "v2ex-api-parser": "file:../v2ex_api_parser",
         "web-vitals": "^2.1.4"
     },
     "scripts": {
