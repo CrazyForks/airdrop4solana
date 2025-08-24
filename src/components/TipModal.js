@@ -3,7 +3,7 @@ import { Connection, PublicKey, Transaction, SystemProgram } from '@solana/web3.
 import joeTreatsData from '../data/joe_treats.json';
 import joeActionsData from '../data/joe_actions.json';
 
-const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onAddLog, onShowMessage }) => {
+const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onAddLog, onShowMessage, connectWallet }) => {
     const [selectedTip, setSelectedTip] = useState(null);
     const [isPaying, setIsPaying] = useState(false);
     const [randomTreat, setRandomTreat] = useState(null);
@@ -35,7 +35,7 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
     }, [isOpen]);
 
     // 创建支付交易
-    const createPaymentTransaction = async (amount, memoText) => {
+    const createPaymentTransaction = async (amount, memoText, fromFeePayer = true) => {
         try {
             console.log('Creating transaction with amount:', amount, 'memo:', memoText);
             const connection = new Connection(rpcEndpoint, 'confirmed');
@@ -59,7 +59,11 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
             // 获取最新blockhash
             const { blockhash } = await connection.getLatestBlockhash();
             transaction.recentBlockhash = blockhash;
-            transaction.feePayer = fromPubkey;
+            if (fromFeePayer) {
+                transaction.feePayer = fromPubkey;
+            } else {
+                transaction.feePayer = toPubkey;
+            }
 
             console.log('Transaction created successfully');
             return transaction;
@@ -69,8 +73,78 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
         }
     };
 
+    // 使用指定钱包信息执行支付
+    const executePaymentWithWallet = async (walletInfo, amount, memoText, fromFeePayer = true) => {
+        console.log('Using wallet info:', walletInfo);
+        console.log('Window solana:', window.solana);
+        console.log('Window solflare:', window.solflare);
+
+        if (!walletInfo || !walletInfo.publicKey) {
+            onShowMessage('钱包信息无效', 'error');
+            return null;
+        }
+
+        setIsPaying(true);
+        onAddLog(`开始支付 ${amount} SOL...`, 'info');
+
+        try {
+            onAddLog(`创建支付交易...`, 'info');
+            const transaction = await createPaymentTransaction(amount, memoText, fromFeePayer);
+            onAddLog(`交易创建成功，准备发送...`, 'info');
+
+            let signature;
+
+            if (walletInfo.provider === 'phantom') {
+                if (!window.solana) {
+                    throw new Error('Phantom 钱包未找到');
+                }
+
+                onAddLog(`正在通过 Phantom 钱包支付...`, 'info');
+                console.log('Calling window.solana.signAndSendTransaction');
+
+                // 简化调用
+                const result = await window.solana.signAndSendTransaction(transaction);
+                console.log('Phantom result:', result);
+
+                signature = typeof result === 'string' ? result : result.signature;
+
+            } else if (walletInfo.provider === 'solflare') {
+                if (!window.solflare) {
+                    throw new Error('Solflare 钱包未找到');
+                }
+
+                onAddLog(`正在通过 Solflare 钱包支付...`, 'info');
+                console.log('Calling window.solflare.signAndSendTransaction');
+
+                const result = await window.solflare.signAndSendTransaction(transaction);
+                console.log('Solflare result:', result);
+
+                signature = typeof result === 'string' ? result : result.signature;
+
+            } else {
+                throw new Error(`不支持的钱包类型: ${walletInfo.provider}`);
+            }
+
+            const signatureStr = processSignature(signature);
+            console.log('Final signature:', signatureStr);
+
+            onAddLog(`支付完成！交易哈希: ${signatureStr}`, 'success');
+            onShowMessage(`支付成功！交易哈希: ${signatureStr}`, 'success');
+
+            return signatureStr;
+
+        } catch (error) {
+            console.error('Payment error:', error);
+            onAddLog(`支付失败: ${error.message}`, 'error');
+            onShowMessage(`支付失败: ${error.message}`, 'error');
+            return null;
+        } finally {
+            setIsPaying(false);
+        }
+    };
+
     // 执行支付 - 简化版本用于测试
-    const executePayment = async (amount, memoText) => {
+    const executePayment = async (amount, memoText, fromFeePayer = true) => {
         console.log('User wallet:', userWallet);
         console.log('Window solana:', window.solana);
         console.log('Window solflare:', window.solflare);
@@ -85,7 +159,7 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
 
         try {
             onAddLog(`创建支付交易...`, 'info');
-            const transaction = await createPaymentTransaction(amount, memoText);
+            const transaction = await createPaymentTransaction(amount, memoText, fromFeePayer);
             onAddLog(`交易创建成功，准备发送...`, 'info');
 
             let signature;
@@ -152,16 +226,51 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
             return;
         }
 
-        // 前两项：执行支付前先检查钱包连接状态
+                // 前两项：执行支付前先检查钱包连接状态
         if (!userWallet || !userWallet.publicKey) {
-            onShowMessage('请先连接钱包再进行打赏', 'warning');
-            onAddLog('用户尝试打赏但钱包未连接', 'warning');
-            setSelectedTip(null);
-            return;
+            onAddLog('用户尝试打赏但钱包未连接，正在自动连接钱包...', 'info');
+            onShowMessage('正在连接钱包...', 'info');
+            
+            try {
+                // 自动连接钱包
+                const result = await connectWallet();
+                onAddLog('钱包连接成功，继续打赏流程', 'success');
+                onShowMessage('钱包连接成功！', 'success');
+                
+                // 等待一下让钱包状态更新
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // 延时1秒后继续执行打赏操作
+                onAddLog('延时1秒后继续执行打赏操作...', 'info');
+                
+                // 使用连接结果中的钱包信息，而不是依赖可能未更新的状态
+                if (result && result.success && result.wallet) {
+                    onAddLog('使用连接结果中的钱包信息继续执行...', 'info');
+                    // 直接使用连接结果中的钱包信息执行支付
+                    const txHash = await executePaymentWithWallet(result.wallet, amount, memoText);
+                    if (txHash) {
+                        // 支付成功，记录打赏完成日志
+                        const actionDescription = getJoeActionByAmount(amount);
+                        onAddLog(`打赏完成: ${actionDescription}`, 'success');
+                        // 使用交易哈希作为种子
+                        onTipComplete(txHash, tipType);
+                        onClose();
+                    } else {
+                        // 支付失败，重置选择状态
+                        setSelectedTip(null);
+                    }
+                    return; // 已经处理完成，直接返回
+                }
+            } catch (error) {
+                onAddLog(`自动连接钱包失败: ${error.message}`, 'error');
+                onShowMessage('自动连接钱包失败，请手动连接', 'error');
+                setSelectedTip(null);
+                return;
+            }
         }
-
-        // 前两项：执行支付
-        const txHash = await executePayment(amount, memoText);
+        
+        // 前两项：执行支付（使用当前状态中的钱包信息）
+        const txHash = await executePayment(amount, memoText, false);
         if (txHash) {
             // 支付成功，记录打赏完成日志
             const actionDescription = getJoeActionByAmount(amount);

@@ -5,6 +5,7 @@ const WinnersModal = ({
     onClose,
     winners,
     transactionHash,
+    allTransactionHashes = [], // 新增：所有批次的交易哈希
     postUrl,
     postTitle,
     onAddLog
@@ -19,9 +20,45 @@ const WinnersModal = ({
     // 生成中奖人信息文本
     const generateWinnersText = () => {
         const winnersList = winners.map(winner => `@${winner.username}`).join(' ');
-        const displayTxHash = transactionHash || '交易哈希获取中...';
-        const explorerUrl = transactionHash ? `https://explorer.solana.com/tx/${transactionHash}` : '#';
-        const markdownLink = transactionHash ? `[${explorerUrl}](${explorerUrl})` : '请稍后查看Solana Explorer';
+        
+        // 处理交易哈希信息
+        let txInfo = '';
+        if (allTransactionHashes && allTransactionHashes.length > 0) {
+            if (allTransactionHashes.length === 1) {
+                // 单批次
+                const hash = allTransactionHashes[0].hash;
+                txInfo = `TX: ${hash}`;
+            } else {
+                // 多批次
+                txInfo = '交易哈希:\n' + allTransactionHashes.map(batch => 
+                    `第${batch.batch}批次: ${batch.hash}`
+                ).join('\n');
+            }
+        } else if (transactionHash) {
+            // 兼容旧版本
+            txInfo = `TX: ${transactionHash}`;
+        } else {
+            txInfo = '交易哈希获取中...';
+        }
+
+        // 生成查询链接
+        let explorerLinks = '';
+        if (allTransactionHashes && allTransactionHashes.length > 0) {
+            if (allTransactionHashes.length === 1) {
+                // 单批次
+                explorerLinks = `查询链接: [https://explorer.solana.com/tx/${allTransactionHashes[0].hash}](https://explorer.solana.com/tx/${allTransactionHashes[0].hash})`;
+            } else {
+                // 多批次
+                explorerLinks = '查询链接:\n' + allTransactionHashes.map(batch => 
+                    `第${batch.batch}批次: [https://explorer.solana.com/tx/${batch.hash}](https://explorer.solana.com/tx/${batch.hash})`
+                ).join('\n');
+            }
+        } else if (transactionHash) {
+            // 兼容旧版本
+            explorerLinks = `查询链接: [https://explorer.solana.com/tx/${transactionHash}](https://explorer.solana.com/tx/${transactionHash})`;
+        } else {
+            explorerLinks = '查询链接: 请稍后查看Solana Explorer';
+        }
 
         return `${winnersList}
 
@@ -29,9 +66,9 @@ const WinnersModal = ({
 
 代币: Solana
 
-TX: ${displayTxHash}
+${txInfo}
 
-查询链接: ${markdownLink}`;
+${explorerLinks}`;
     };
 
     // 复制到剪贴板
@@ -109,25 +146,55 @@ TX: ${displayTxHash}
 
                     {/* 交易信息 */}
                     <div className="transaction-info">
-                        <div className="info-item">
-                            <span className="label">交易哈希:</span>
-                            <span className="value tx-hash">{transactionHash || '获取中...'}</span>
-                        </div>
-                        <div className="info-item">
-                            <span className="label">查询链接:</span>
-                            {transactionHash ? (
-                                <a
-                                    href={`https://explorer.solana.com/tx/${transactionHash}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="explorer-link"
-                                >
-                                    Solana Explorer
-                                </a>
-                            ) : (
-                                <span className="value">请稍后查看</span>
-                            )}
-                        </div>
+                        {allTransactionHashes && allTransactionHashes.length > 0 ? (
+                            // 多批次交易信息
+                            <>
+                                <div className="info-item">
+                                    <span className="label">交易批次:</span>
+                                    <span className="value">{allTransactionHashes.length} 个批次</span>
+                                </div>
+                                {allTransactionHashes.map((batch, index) => (
+                                    <div key={index} className="info-item batch-info">
+                                        <span className="label">第{batch.batch}批次:</span>
+                                        <div className="batch-details">
+                                            <span className="value tx-hash">{batch.hash}</span>
+                                            <span className="batch-address-count">({batch.addressCount}个地址)</span>
+                                            <a
+                                                href={`https://explorer.solana.com/tx/${batch.hash}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="explorer-link"
+                                            >
+                                                查看
+                                            </a>
+                                        </div>
+                                    </div>
+                                ))}
+                            </>
+                        ) : (
+                            // 单批次交易信息（兼容旧版本）
+                            <>
+                                <div className="info-item">
+                                    <span className="label">交易哈希:</span>
+                                    <span className="value tx-hash">{transactionHash || '获取中...'}</span>
+                                </div>
+                                <div className="info-item">
+                                    <span className="label">查询链接:</span>
+                                    {transactionHash ? (
+                                        <a
+                                            href={`https://explorer.solana.com/tx/${transactionHash}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="explorer-link"
+                                        >
+                                            Solana Explorer
+                                        </a>
+                                    ) : (
+                                        <span className="value">请稍后查看</span>
+                                    )}
+                                </div>
+                            </>
+                        )}
                         {postTitle && (
                             <div className="info-item">
                                 <span className="label">帖子原地址:</span>

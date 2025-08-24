@@ -3,7 +3,7 @@ import { drawUsers } from '../utils/lottery';
 import { batchParseUserInfo } from '../utils/v2ex';
 import TipModal from './TipModal';
 
-const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMessage, defaultShowLottery = false, userWallet, rpcEndpoint }) => {
+const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMessage, defaultShowLottery = false, userWallet, rpcEndpoint, connectWallet }) => {
   const [showLotterySettings, setShowLotterySettings] = useState(defaultShowLottery);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [selectionCount, setSelectionCount] = useState(10);
@@ -738,6 +738,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
         rpcEndpoint={rpcEndpoint}
         onAddLog={onAddLog}
         onShowMessage={onShowMessage}
+        connectWallet={connectWallet}
       />
     </div>
   );

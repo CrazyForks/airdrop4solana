@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 // Solana 导入
 import { Connection, PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
+import { getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, createTransferInstruction } from '@solana/spl-token';
 
 // 组件导入
 import Header from './components/Header';
@@ -30,12 +31,14 @@ function App() {
   // 地址和空投相关状态
   const [targetAddresses, setTargetAddresses] = useState([]);
   const [airdropAmount, setAirdropAmount] = useState('0.001');
+  const [airdropToken, setAirdropToken] = useState('');
 
   // 中奖人弹窗状态
   const [showWinnersModal, setShowWinnersModal] = useState(false);
   const [winnersInfo, setWinnersInfo] = useState({
     winners: [],
     transactionHash: '',
+    allTransactionHashes: [], // 新增：所有批次的交易哈希
     postUrl: '',
     postTitle: ''
   });
@@ -249,22 +252,12 @@ function App() {
 
 
   // 执行批量空投
-  const executeBatchAirdrop = async () => {
-    if (!userWallet || !userWallet.publicKey || targetAddresses.length === 0 || !airdropAmount) {
+  const executeBatchAirdrop = async (customWallet = null) => {
+    const walletToUse = customWallet || userWallet;
+    if (!walletToUse || !walletToUse.publicKey || targetAddresses.length === 0 || !airdropAmount) {
       addLog('请先连接钱包并完成设置', 'error');
       showMessage('请先连接钱包并完成设置', 'error');
       return;
-    }
-
-    // 调试信息
-    if (debugMode) {
-      addLog(`调试模式开启 - 钱包信息: ${JSON.stringify({
-        provider: userWallet.provider,
-        publicKey: userWallet.publicKey?.toString().substring(0, 8) + '...',
-        connected: userWallet.connected
-      })}`, 'info');
-      addLog(`调试模式开启 - 目标地址数量: ${targetAddresses.length}`, 'info');
-      addLog(`调试模式开启 - RPC端点: ${rpcEndpoint}`, 'info');
     }
 
     try {
@@ -286,11 +279,31 @@ function App() {
         throw new Error(`RPC连接失败: ${error.message}。请检查网络配置或点击"测试RPC连接"`);
       }
 
-      const amount = solToLamports(airdropAmount);
-      const fromPubkey = new PublicKey(userWallet.publicKey);
+      const fromPubkey = new PublicKey(walletToUse.publicKey);
+      let isTokenAirdrop = false;
+      let tokenMint = null;
+      let tokenAmount = null;
+
+      // 判断是SOL空投还是Token空投
+      if (airdropToken && airdropToken.trim()) {
+        try {
+          tokenMint = new PublicKey(airdropToken.trim());
+          isTokenAirdrop = true;
+          tokenAmount = parseFloat(airdropAmount);
+          addLog(`检测到Token空投: ${airdropToken.substring(0, 8)}...`, 'info');
+        } catch (error) {
+          throw new Error(`Token地址格式无效: ${airdropToken}`);
+        }
+      } else {
+        // SOL空投
+        const amount = solToLamports(airdropAmount);
+        addLog(`空投参数: 金额 ${airdropAmount} SOL (${amount} lamports), 地址数量 ${targetAddresses.length}`, 'info');
+      }
 
       addLog(`使用已连接钱包: ${fromPubkey.toString().substring(0, 8)}...`, 'info');
-      addLog(`空投参数: 金额 ${airdropAmount} SOL (${amount} lamports), 地址数量 ${targetAddresses.length}`, 'info');
+      if (isTokenAirdrop) {
+        addLog(`空投参数: 金额 ${airdropAmount} Tokens, Token地址 ${airdropToken.substring(0, 8)}..., 地址数量 ${targetAddresses.length}`, 'info');
+      }
 
       // 在分批前解析 .sol 域名到公钥
       addLog('开始验证和解析目标地址...', 'info');
@@ -346,13 +359,31 @@ function App() {
 
           while (index < addresses.length) {
             const addr = addresses[index];
-            tx.add(
-              SystemProgram.transfer({
-                fromPubkey: fromPubkey,
-                toPubkey: new PublicKey(addr.publicKey),
-                lamports: amount
-              })
-            );
+            
+            if (isTokenAirdrop) {
+              // Token空投逻辑
+              const toPubkey = new PublicKey(addr.publicKey);
+              const toTokenAccount = await getAssociatedTokenAddress(tokenMint, toPubkey);
+              const fromTokenAccount = await getAssociatedTokenAddress(tokenMint, fromPubkey);
+                tx.add(
+                  createTransferInstruction(
+                    fromTokenAccount,
+                    toTokenAccount,
+                    fromPubkey,
+                    tokenAmount * Math.pow(10, 9) // 假设9位小数，实际应该从Token元数据获取
+                  )
+                );
+            } else {
+              // SOL空投逻辑
+              const amount = solToLamports(airdropAmount);
+              tx.add(
+                SystemProgram.transfer({
+                  fromPubkey: fromPubkey,
+                  toPubkey: new PublicKey(addr.publicKey),
+                  lamports: amount
+                })
+              );
+            }
 
             let fits = true;
             try {
@@ -379,13 +410,39 @@ function App() {
             fallbackTx.recentBlockhash = sizeEstimateBlockhash;
 
             const addr = addresses[index];
-            fallbackTx.add(
-              SystemProgram.transfer({
-                fromPubkey: fromPubkey,
-                toPubkey: new PublicKey(addr.publicKey),
-                lamports: amount
-              })
-            );
+            if (isTokenAirdrop) {
+              // 单个Token转账
+              const toPubkey = new PublicKey(addr.publicKey);
+              const toTokenAccount = await getAssociatedTokenAddress(tokenMint, toPubkey);
+              fallbackTx.add(
+                createAssociatedTokenAccountInstruction(
+                  fromPubkey,
+                  toTokenAccount,
+                  toPubkey,
+                  tokenMint
+                )
+              );
+              // 获取发送方的Token账户
+              const fromTokenAccount = await getAssociatedTokenAddress(tokenMint, fromPubkey);
+              fallbackTx.add(
+                createTransferInstruction(
+                  fromTokenAccount,
+                  toTokenAccount,
+                  fromPubkey,
+                  tokenAmount * Math.pow(10, 9)
+                )
+              );
+            } else {
+              // 单个SOL转账
+              const amount = solToLamports(airdropAmount);
+              fallbackTx.add(
+                SystemProgram.transfer({
+                  fromPubkey: fromPubkey,
+                  toPubkey: new PublicKey(addr.publicKey),
+                  lamports: amount
+                })
+              );
+            }
             batchAddresses.push(addr);
             index += 1;
           }
@@ -408,6 +465,7 @@ function App() {
       let failCount = 0;
       let processedCount = 0;
       let lastSuccessfulTransactionHash = '';
+      let allTransactionHashes = []; // 收集所有批次的交易哈希
 
       for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
         const { addresses: batchAddresses } = preparedBatches[batchIndex];
@@ -427,13 +485,31 @@ function App() {
           const target = batchAddresses[i];
           const globalIndexZero = processedCount + i;
 
-          transaction.add(
-            SystemProgram.transfer({
-              fromPubkey: fromPubkey,
-              toPubkey: new PublicKey(target.publicKey),
-              lamports: amount
-            })
-          );
+          if (isTokenAirdrop) {
+            // Token空投逻辑
+            const toPubkey = new PublicKey(target.publicKey);
+            const toTokenAccount = await getAssociatedTokenAddress(tokenMint, toPubkey);
+            // 获取发送方的Token账户
+            const fromTokenAccount = await getAssociatedTokenAddress(tokenMint, fromPubkey);
+            transaction.add(
+              createTransferInstruction(
+                fromTokenAccount,
+                toTokenAccount,
+                fromPubkey,
+                tokenAmount * Math.pow(10, 9)
+              )
+            );
+          } else {
+            // SOL空投逻辑
+            const amount = solToLamports(airdropAmount);
+            transaction.add(
+              SystemProgram.transfer({
+                fromPubkey: fromPubkey,
+                toPubkey: new PublicKey(target.publicKey),
+                lamports: amount
+              })
+            );
+          }
 
           addLog(`已添加第 ${globalIndexZero + 1}/${totalAddresses} 个转账指令: ${target.publicKey.substring(0, 8)}...`, 'info');
         }
@@ -447,7 +523,7 @@ function App() {
 
         let signature;
         try {
-          if (userWallet.provider === 'phantom') {
+          if (walletToUse.provider === 'phantom') {
             if (!window.solana) {
               throw new Error('Phantom 钱包未找到，请确保已安装并连接 Phantom 钱包');
             }
@@ -456,7 +532,7 @@ function App() {
             }
             addLog(`正在通过 Phantom 钱包发送第 ${batchIndex + 1} 批次交易...`, 'info');
             signature = await window.solana.signAndSendTransaction(transaction);
-          } else if (userWallet.provider === 'solflare') {
+          } else if (walletToUse.provider === 'solflare') {
             if (!window.solflare) {
               throw new Error('Solflare 钱包未找到，请确保已安装并连接 Solflare 钱包');
             }
@@ -500,6 +576,11 @@ function App() {
 
           successCount += batchAddresses.length;
           lastSuccessfulTransactionHash = signatureStr; // 保存最后成功的交易哈希
+          allTransactionHashes.push({
+            batch: batchIndex + 1,
+            hash: signatureStr,
+            addressCount: batchAddresses.length
+          }); // 保存此批次的交易哈希
           console.log(`✅ 第 ${batchIndex + 1} 批次交易确认成功！TX哈希:`, signatureStr);
           addLog(`第 ${batchIndex + 1} 批次交易确认成功！TX: ${signatureStr}`, 'success');
 
@@ -521,6 +602,14 @@ function App() {
                 addLog(`第 ${batchIndex + 1} 批次交易状态检查成功，已确认！TX: ${signatureStr}`, 'success');
                 successCount += batchAddresses.length;
                 lastSuccessfulTransactionHash = signatureStr; // 保存最后成功的交易哈希
+                // 如果还没有记录此批次的哈希，则添加
+                if (!allTransactionHashes.find(h => h.batch === batchIndex + 1)) {
+                  allTransactionHashes.push({
+                    batch: batchIndex + 1,
+                    hash: signatureStr,
+                    addressCount: batchAddresses.length
+                  });
+                }
 
                 // 显示状态检查成功通知
                 if (batchCount > 1) {
@@ -569,7 +658,7 @@ function App() {
       const successNotification = {
         title: '🎉 空投成功完成！',
         content: `成功空投 ${successCount} 个地址，${failCount > 0 ? `失败 ${failCount} 个` : '无失败'}。`,
-        details: `总金额: ${(parseFloat(airdropAmount) * successCount).toFixed(6)} SOL`,
+        details: `总金额: ${(parseFloat(airdropAmount) * successCount).toFixed(6)} ${isTokenAirdrop ? 'Tokens' : 'SOL'}`,
         explorer: 'https://explorer.solana.com'
       };
 
@@ -592,6 +681,7 @@ function App() {
         setWinnersInfo({
           winners: winnersData,
           transactionHash: lastSuccessfulTransactionHash,
+          allTransactionHashes: allTransactionHashes, // 传递所有批次的交易哈希
           postUrl: v2exParseResult?.sourceUrl || '',
           postTitle: v2exParseResult?.title || 'V2EX帖子'
         });
@@ -612,23 +702,16 @@ function App() {
 
       // 提供更详细的错误信息
       let errorMessage = error.message || 'Unknown error';
-      let errorDetails = '';
-
-      if (error.stack) {
-        errorDetails = error.stack.split('\n')[0] || '';
-      }
 
       addLog(`批量空投失败: ${errorMessage}`, 'error');
-      if (errorDetails && errorDetails !== errorMessage) {
-        addLog(`错误详情: ${errorDetails}`, 'error');
-      }
 
       if (error.message && error.message.includes('RPC连接失败')) {
         showMessage(`批量空投失败: ${error.message}`, 'error');
       } else if (error.message && (error.message.includes('failed to fetch') || error.message.includes('ERR_CONNECTION_RESET'))) {
         showMessage('网络连接失败，请检查网络配置或尝试切换网络', 'error');
       } else if (error.message && error.message.includes('insufficient funds')) {
-        showMessage('钱包余额不足，请确保有足够的SOL执行空投', 'error');
+        const tokenType = airdropToken && airdropToken.trim() ? 'Token' : 'SOL';
+        showMessage(`钱包余额不足，请确保有足够的 ${tokenType} 支付交易费用和空投金额`, 'error');
       } else if (error.message && error.message.includes('User rejected')) {
         showMessage('用户取消了交易签名', 'warning');
         addLog('用户取消了交易签名', 'warning');
@@ -889,7 +972,18 @@ function App() {
                 </p>
 
                 <div className="form-group">
-                  <label className="form-label">单个空投金额 (SOL)</label>
+                  <label className="form-label">空投Token地址</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={airdropToken}
+                    onChange={(e) => setAirdropToken(e.target.value)}
+                    placeholder="输入Token的Mint地址 (留空表示空投SOL)"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">空投金额</label>
                   <input
                     type="number"
                     className="form-control"
@@ -907,13 +1001,17 @@ function App() {
                     <span className="value">{targetAddresses.length} 个</span>
                   </div>
                   <div className="summary-item">
+                    <span className="label">空投Token:</span>
+                    <span className="value">{airdropToken || 'SOL (原生代币)'}</span>
+                  </div>
+                  <div className="summary-item">
                     <span className="label">单个空投金额:</span>
-                    <span className="value">{airdropAmount} SOL</span>
+                    <span className="value">{airdropAmount} {airdropToken ? 'Tokens' : 'SOL'}</span>
                   </div>
                   <div className="summary-item">
                     <span className="label">空投总价值:</span>
                     <span className="value">
-                      {targetAddresses.length > 0 ? (parseFloat(airdropAmount || 0) * targetAddresses.length).toFixed(6) : '0'} SOL
+                      {targetAddresses.length > 0 ? (parseFloat(airdropAmount || 0) * targetAddresses.length).toFixed(6) : '0'} {airdropToken ? 'Tokens' : 'SOL'}
                     </span>
                   </div>
                   <div className="summary-item">
@@ -927,16 +1025,43 @@ function App() {
                 <div className="btn-group">
                   <button
                     className="btn btn-primary btn-lg"
-                    onClick={() => {
+                    onClick={async () => {
                       // 检查钱包连接状态
                       if (!userWallet || !userWallet.publicKey) {
-                        showMessage('请先连接钱包再执行空投', 'warning');
-                        addLog('用户尝试空投但钱包未连接', 'warning');
-                        return;
+                        addLog('用户尝试空投但钱包未连接，正在自动连接钱包...', 'info');
+                        showMessage('正在连接钱包...', 'info');
+                        
+                        try {
+                          // 自动连接钱包
+                          const result = await connectWallet();
+                          addLog('钱包连接成功，继续空投流程', 'success');
+                          showMessage('钱包连接成功！', 'success');
+                          
+                          // 等待一下让钱包状态更新
+                          await new Promise(resolve => setTimeout(resolve, 1000));
+                          
+                          // 延时1秒后继续执行空投操作
+                          addLog('延时1秒后继续执行空投操作...', 'info');
+                          
+                          // 使用连接结果中的钱包信息，而不是依赖可能未更新的状态
+                          if (result && result.success && result.wallet) {
+                            addLog('使用连接结果中的钱包信息继续执行空投...', 'info');
+                            // 直接使用连接结果中的钱包信息执行空投
+                            // 临时使用连接结果中的钱包信息执行空投
+                            await executeBatchAirdrop(result.wallet);
+                            return; // 已经处理完成，直接返回
+                          }
+                        } catch (error) {
+                          addLog(`自动连接钱包失败: ${error.message}`, 'error');
+                          showMessage('自动连接钱包失败，请手动连接', 'error');
+                          return;
+                        }
                       }
+                      
+                      // 执行空投（使用当前状态中的钱包信息）
                       executeBatchAirdrop();
                     }}
-                    disabled={!userWallet || targetAddresses.length === 0 || !airdropAmount || parseFloat(airdropAmount) <= 0}
+                    disabled={targetAddresses.length === 0 || !airdropAmount || parseFloat(airdropAmount) <= 0 || (airdropToken && airdropToken.trim() && !airdropToken.match(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/))}
                   >
                     <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 2L2 7l10 5 10-5-10-5z" />
@@ -991,6 +1116,7 @@ function App() {
           defaultShowLottery={v2exParseResult?.isLotteryOperation || false}
           userWallet={userWallet}
           rpcEndpoint={rpcEndpoint}
+          connectWallet={connectWallet}
         />
       )}
 
@@ -1008,6 +1134,7 @@ function App() {
         onClose={() => setShowWinnersModal(false)}
         winners={winnersInfo.winners}
         transactionHash={winnersInfo.transactionHash}
+        allTransactionHashes={winnersInfo.allTransactionHashes}
         postUrl={winnersInfo.postUrl}
         postTitle={winnersInfo.postTitle}
         onAddLog={addLog}

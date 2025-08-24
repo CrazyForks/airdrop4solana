@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 const FloatingLogPanel = ({ logs, clearLogs, exportLogs }) => {
   const [copiedIndex, setCopiedIndex] = useState(-1);
-  const [showAllLogs, setShowAllLogs] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
 
   // 检测是否为哈希值（长度大于40且只包含字母数字的字符串）
   const isHashValue = (text) => {
@@ -65,13 +65,85 @@ const FloatingLogPanel = ({ logs, clearLogs, exportLogs }) => {
     }
   };
 
+  // 切换折叠状态
+  const toggleCollapse = () => {
+    setIsCollapsed(!isCollapsed);
+  };
+
+  // 如果处于折叠状态，显示简化版本
+  if (isCollapsed) {
+    return (
+      <div className="floating-log-panel">
+        <div className="log-panel-collapsed">
+          <div className="log-header-collapsed">
+            <h3 className="log-title">操作日志</h3>
+            <button 
+              className="log-expand-btn" 
+              onClick={toggleCollapse}
+              title="展开日志面板"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+          </div>
+          <div className="log-content-collapsed">
+            <div className="log-summary">
+              <div className="log-summary-row">
+                <div className="log-count-badge">
+                  {logs.length} 条日志
+                </div>
+                <div className="log-actions-collapsed">
+                  <button className="btn btn-secondary log-btn compact" onClick={clearLogs} title="清空日志">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M3 6h18" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                  <button className="btn btn-secondary log-btn compact" onClick={exportLogs} title="导出日志">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7,10 12,15 17,10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {logs.length > 0 && (
+                <div className="log-latest">
+                  <div className="log-latest-header">
+                    <span className="log-latest-label">最新日志</span>
+                    <span className="log-latest-time">{logs[0]?.timestamp}</span>
+                  </div>
+                  <div className="log-latest-message">
+                    {logs[0]?.message || '暂无日志'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 显示完整日志面板
   return (
     <div className="floating-log-panel">
-      {/* 显示完整日志面板 */}
       <div className="log-panel-expanded">
         <div className="log-header">
           <h3 className="log-title">操作日志</h3>
           <div className="log-controls">
+            <button 
+              className="log-collapse-btn" 
+              onClick={toggleCollapse}
+              title="折叠日志面板"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+            </button>
             <button className="btn btn-secondary log-btn" onClick={clearLogs} title="清空日志">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M3 6h18" />
@@ -97,7 +169,7 @@ const FloatingLogPanel = ({ logs, clearLogs, exportLogs }) => {
             </div>
           ) : (
             <div className="log-entries">
-              {(showAllLogs ? logs : logs.slice(-50)).map((log, index) => {
+              {logs.map((log, index) => {
                 const hash = extractHashFromMessage(log.message);
 
                 return (
@@ -128,23 +200,12 @@ const FloatingLogPanel = ({ logs, clearLogs, exportLogs }) => {
                 );
               })}
 
-              {/* 日志数量提示和控制 */}
-              {logs.length > 50 && (
-                <div className="log-controls-footer">
-                  <div className="log-info">
-                    {showAllLogs
-                      ? `显示全部 ${logs.length} 条日志`
-                      : `显示最近 50 条日志，共 ${logs.length} 条`
-                    }
-                  </div>
-                  <button
-                    className="btn btn-secondary toggle-logs-btn"
-                    onClick={() => setShowAllLogs(!showAllLogs)}
-                  >
-                    {showAllLogs ? '收起日志' : '查看全部'}
-                  </button>
+              {/* 日志数量提示 */}
+              <div className="log-controls-footer">
+                <div className="log-info">
+                  共 {logs.length} 条日志
                 </div>
-              )}
+              </div>
             </div>
           )}
         </div>
