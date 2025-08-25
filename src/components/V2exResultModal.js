@@ -155,7 +155,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
           excludeUsers: excludeUsers,
           drawCount: selectionCount,
           seed: lotterySeed,
-          environment: 'test', // 使用测试环境，生产环境可设置为 'prod'
+          environment: 'prod', // 使用测试环境，生产环境可设置为 'prod'
           postInfo: {
             postId: result.postId,
             title: result.title,
@@ -184,7 +184,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
             totalUsers: lotteryResult.totalUsers,
             drawCount: selectionCount,
             seed: lotterySeed,
-            environment: 'test',
+            environment: 'prod',
             githubCommit: lotteryResult.githubCommit,
             isTipLottery: true
           });
@@ -196,7 +196,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
               totalUsers: lotteryResult.totalUsers,
               drawCount: selectionCount,
               seed: lotterySeed,
-              environment: 'test',
+              environment: 'prod',
               githubCommit: lotteryResult.githubCommit,
               isTipLottery: true
             });
@@ -234,7 +234,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
             totalUsers: allUsers.length,
             drawCount: selectionCount,
             seed: lotterySeed,
-            environment: 'local',
+            environment: 'prod',
             githubCommit: null,
             isTipLottery: false
           });

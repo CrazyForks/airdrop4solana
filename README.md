@@ -41,7 +41,7 @@ const LOTTERY_API_CONFIG = {
     TEST: "test",
     PRODUCTION: "prod",
   },
-  DEFAULT_ENVIRONMENT: "test",
+  DEFAULT_ENVIRONMENT: "prod",
   TIMEOUT: 30000,
 };
 ```
