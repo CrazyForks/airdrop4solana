@@ -75,7 +75,7 @@ const WinnersModal = ({
         let verificationInfo = '';
         let githubInfo = '';
         if (lotteryResultInfo && lotteryResultInfo.isTipLottery) {
-            verificationInfo = `验证地址: [${lotteryResultInfo.environment === 'prod' ? 'https://lottery-api.example.com' : 'http://localhost:49433'}/verify](${lotteryResultInfo.environment === 'prod' ? 'https://lottery-api.example.com' : 'http://localhost:49433'}/verify)`;
+            verificationInfo = `${LOTTERY_API_CONFIG.BASE_URL}/verify`;
             githubInfo = `GitHub地址: [${lotteryResultInfo.githubCommit.repository}](${lotteryResultInfo.githubCommit.fileUrl})`;
         }
 
