@@ -6,7 +6,7 @@
 // 抽奖接口配置
 const LOTTERY_API_CONFIG = {
     // 接口基础URL
-    BASE_URL: 'https://lottey.grabcoffee.cc/',
+    BASE_URL: 'https://lottey.grabcoffee.cc',
 
     // 接口端点
     ENDPOINTS: {
