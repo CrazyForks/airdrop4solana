@@ -35,11 +35,17 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
     }, [isOpen]);
 
     // 创建支付交易
-    const createPaymentTransaction = async (amount, memoText, fromFeePayer = true) => {
+    const createPaymentTransaction = async (walletInfo, amount, memoText, fromFeePayer = true) => {
         try {
             console.log('Creating transaction with amount:', amount, 'memo:', memoText);
+            console.log('Wallet info:', walletInfo);
+
+            if (!walletInfo || !walletInfo.publicKey) {
+                throw new Error('钱包信息无效，无法创建交易');
+            }
+
             const connection = new Connection(rpcEndpoint, 'confirmed');
-            const fromPubkey = new PublicKey(userWallet.publicKey);
+            const fromPubkey = new PublicKey(walletInfo.publicKey);
             const toPubkey = new PublicKey(JOE_RECEIVER_ADDRESS);
 
             const transaction = new Transaction();
@@ -89,7 +95,7 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
 
         try {
             onAddLog(`创建支付交易...`, 'info');
-            const transaction = await createPaymentTransaction(amount, memoText, fromFeePayer);
+            const transaction = await createPaymentTransaction(walletInfo, amount, memoText, fromFeePayer);
             onAddLog(`交易创建成功，准备发送...`, 'info');
 
             let signature;
@@ -159,7 +165,7 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
 
         try {
             onAddLog(`创建支付交易...`, 'info');
-            const transaction = await createPaymentTransaction(amount, memoText, fromFeePayer);
+            const transaction = await createPaymentTransaction(userWallet, amount, memoText, fromFeePayer);
             onAddLog(`交易创建成功，准备发送...`, 'info');
 
             let signature;
@@ -218,7 +224,7 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
         setSelectedTip(tipType);
 
         if (tipType === 'skip') {
-            // 第三项：直接关闭，使用时间戳作为种子
+            // 第三项：直接关闭，使用时间戳作为种子（不打赏，使用本地抽奖）
             onAddLog(`下次一定, 我可记住了哦`, 'info');
             const timestamp = Date.now().toString();
             onTipComplete(timestamp, tipType);
@@ -226,23 +232,23 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
             return;
         }
 
-                // 前两项：执行支付前先检查钱包连接状态
+        // 前两项：执行支付前先检查钱包连接状态
         if (!userWallet || !userWallet.publicKey) {
             onAddLog('用户尝试打赏但钱包未连接，正在自动连接钱包...', 'info');
             onShowMessage('正在连接钱包...', 'info');
-            
+
             try {
                 // 自动连接钱包
                 const result = await connectWallet();
                 onAddLog('钱包连接成功，继续打赏流程', 'success');
                 onShowMessage('钱包连接成功！', 'success');
-                
+
                 // 等待一下让钱包状态更新
                 await new Promise(resolve => setTimeout(resolve, 1000));
-                
+
                 // 延时1秒后继续执行打赏操作
                 onAddLog('延时1秒后继续执行打赏操作...', 'info');
-                
+
                 // 使用连接结果中的钱包信息，而不是依赖可能未更新的状态
                 if (result && result.success && result.wallet) {
                     onAddLog('使用连接结果中的钱包信息继续执行...', 'info');
@@ -252,7 +258,8 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
                         // 支付成功，记录打赏完成日志
                         const actionDescription = getJoeActionByAmount(amount);
                         onAddLog(`打赏完成: ${actionDescription}`, 'success');
-                        // 使用交易哈希作为种子
+                        onAddLog(`🎲 使用交易哈希作为抽奖种子: ${txHash}`, 'info');
+                        // 使用交易哈希作为种子（打赏后的抽奖将使用接口）
                         onTipComplete(txHash, tipType);
                         onClose();
                     } else {
@@ -268,15 +275,16 @@ const TipModal = ({ isOpen, onClose, onTipComplete, userWallet, rpcEndpoint, onA
                 return;
             }
         }
-        
+
         // 前两项：执行支付（使用当前状态中的钱包信息）
         const txHash = await executePayment(amount, memoText, false);
         if (txHash) {
             // 支付成功，记录打赏完成日志
             const actionDescription = getJoeActionByAmount(amount);
             onAddLog(`打赏完成: ${actionDescription}`, 'success');
+            onAddLog(`🎲 使用交易哈希作为抽奖种子: ${txHash}`, 'info');
 
-            // 使用交易哈希作为种子
+            // 使用交易哈希作为种子（打赏后的抽奖将使用接口）
             onTipComplete(txHash, tipType);
             onClose();
         } else {

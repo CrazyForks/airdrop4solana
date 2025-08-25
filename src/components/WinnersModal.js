@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-
+import { LOTTERY_API_CONFIG } from '../utils/lottery';
 const WinnersModal = ({
     isOpen,
     onClose,
@@ -8,19 +8,33 @@ const WinnersModal = ({
     allTransactionHashes = [], // 新增：所有批次的交易哈希
     postUrl,
     postTitle,
-    onAddLog
+    onAddLog,
+    tokenType = 'solana', // 新增：代币类型参数
+    lotteryResultInfo = null // 新增：抽奖结果信息（用于打赏模式）
 }) => {
     const [copied, setCopied] = useState(false);
 
     if (!isOpen) return null;
 
     // 调试：输出接收到的参数
-    console.log('WinnersModal props:', { winners, transactionHash, postUrl, postTitle });
+    console.log('WinnersModal props:', { winners, transactionHash, postUrl, postTitle, tokenType });
+
+    // 获取代币显示名称
+    const getTokenDisplayName = () => {
+        switch (tokenType) {
+            case 'solana':
+                return 'Solana (SOL)';
+            case 'v2ex':
+                return 'V2EX 代币';
+            default:
+                return '未知代币';
+        }
+    };
 
     // 生成中奖人信息文本
     const generateWinnersText = () => {
         const winnersList = winners.map(winner => `@${winner.username}`).join(' ');
-        
+
         // 处理交易哈希信息
         let txInfo = '';
         if (allTransactionHashes && allTransactionHashes.length > 0) {
@@ -30,7 +44,7 @@ const WinnersModal = ({
                 txInfo = `TX: ${hash}`;
             } else {
                 // 多批次
-                txInfo = '交易哈希:\n' + allTransactionHashes.map(batch => 
+                txInfo = '交易哈希:\n' + allTransactionHashes.map(batch =>
                     `第${batch.batch}批次: ${batch.hash}`
                 ).join('\n');
             }
@@ -46,29 +60,45 @@ const WinnersModal = ({
         if (allTransactionHashes && allTransactionHashes.length > 0) {
             if (allTransactionHashes.length === 1) {
                 // 单批次
-                explorerLinks = `查询链接: [https://explorer.solana.com/tx/${allTransactionHashes[0].hash}](https://explorer.solana.com/tx/${allTransactionHashes[0].hash})`;
+                explorerLinks = `查询链接: [${allTransactionHashes[0].hash}](https://explorer.solana.com/tx/${allTransactionHashes[0].hash})`;
             } else {
                 // 多批次
-                explorerLinks = '查询链接:\n' + allTransactionHashes.map(batch => 
-                    `第${batch.batch}批次: [https://explorer.solana.com/tx/${batch.hash}](https://explorer.solana.com/tx/${batch.hash})`
+                explorerLinks = '查询链接:\n' + allTransactionHashes.map(batch =>
+                    `第${batch.batch}批次: [${batch.hash}](https://explorer.solana.com/tx/${batch.hash})`
                 ).join('\n');
             }
-        } else if (transactionHash) {
-            // 兼容旧版本
-            explorerLinks = `查询链接: [https://explorer.solana.com/tx/${transactionHash}](https://explorer.solana.com/tx/${transactionHash})`;
         } else {
             explorerLinks = '查询链接: 请稍后查看Solana Explorer';
         }
 
-        return `${winnersList}
+        // 处理验证地址信息和github地址
+        let verificationInfo = '';
+        let githubInfo = '';
+        if (lotteryResultInfo && lotteryResultInfo.isTipLottery) {
+            verificationInfo = `验证地址: [${lotteryResultInfo.environment === 'prod' ? 'https://lottery-api.example.com' : 'http://localhost:49433'}/verify](${lotteryResultInfo.environment === 'prod' ? 'https://lottery-api.example.com' : 'http://localhost:49433'}/verify)`;
+            githubInfo = `GitHub地址: [${lotteryResultInfo.githubCommit.repository}](${lotteryResultInfo.githubCommit.fileUrl})`;
+        }
+
+        // 构建最终文本，避免多余的空白行
+        let finalText = `${winnersList}
 
 空投已经发放完毕
 
-代币: Solana
+代币: ${getTokenDisplayName()}
 
 ${txInfo}
 
 ${explorerLinks}`;
+
+        // 只有在有验证信息时才添加
+        if (verificationInfo) {
+            finalText += `\n\n${verificationInfo}`;
+        }
+        if (githubInfo) {
+            finalText += `\n\n${githubInfo}`;
+        }
+
+        return finalText;
     };
 
     // 复制到剪贴板
@@ -123,7 +153,7 @@ ${explorerLinks}`;
                     </button>
                 </div>
 
-                <div className="modal-body">
+                <div className="modal-body scrollable">
                     {/* 成功图标 */}
                     <div className="success-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -144,72 +174,176 @@ ${explorerLinks}`;
                         </div>
                     </div>
 
-                    {/* 交易信息 */}
-                    <div className="transaction-info">
-                        {allTransactionHashes && allTransactionHashes.length > 0 ? (
-                            // 多批次交易信息
-                            <>
-                                <div className="info-item">
-                                    <span className="label">交易批次:</span>
-                                    <span className="value">{allTransactionHashes.length} 个批次</span>
+                    {/* 交易信息和复制预览并列显示 */}
+                    <div className="info-preview-row">
+                        {/* 交易信息 */}
+                        <div className="transaction-info" title="显示所有交易批次的详细信息，包括交易哈希和地址数量">
+                            <h4 className="section-title">
+                                <svg className="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                                </svg>
+                                交易批次信息
+                                <span className="status-badge success">已完成</span>
+                            </h4>
+                            <div className="progress-indicator">
+                                <div className="progress-bar">
+                                    <div className="progress-fill" style={{ width: '100%' }}></div>
                                 </div>
-                                {allTransactionHashes.map((batch, index) => (
-                                    <div key={index} className="info-item batch-info">
-                                        <span className="label">第{batch.batch}批次:</span>
-                                        <div className="batch-details">
-                                            <span className="value tx-hash">{batch.hash}</span>
-                                            <span className="batch-address-count">({batch.addressCount}个地址)</span>
+                                <span className="progress-text">处理完成</span>
+                            </div>
+                            <div className="stats-summary">
+                                <div className="stat-item">
+                                    <span className="stat-label">总批次:</span>
+                                    <span className="stat-value">{allTransactionHashes ? allTransactionHashes.length : 1}</span>
+                                </div>
+                                <div className="stat-item">
+                                    <span className="stat-label">总地址:</span>
+                                    <span className="stat-value">{allTransactionHashes ? allTransactionHashes.reduce((sum, batch) => sum + (batch.addressCount || 0), 0) : winners.length}</span>
+                                </div>
+                            </div>
+                            <div className="action-buttons-mini">
+                                <button
+                                    className="btn-mini btn-outline"
+                                    onClick={() => {
+                                        const text = allTransactionHashes ?
+                                            allTransactionHashes.map(batch =>
+                                                `第${batch.batch}批次: ${batch.hash}`
+                                            ).join('\n') :
+                                            transactionHash || '无交易哈希';
+                                        navigator.clipboard.writeText(text);
+                                        onAddLog('交易哈希已复制到剪贴板', 'success');
+                                    }}
+                                    title="复制所有交易哈希"
+                                >
+                                    <svg className="btn-icon-mini" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                    </svg>
+                                    复制哈希
+                                </button>
+                            </div>
+                            {allTransactionHashes && allTransactionHashes.length > 0 ? (
+                                // 多批次交易信息
+                                <>
+                                    <div className="info-item">
+                                        <span className="label">交易批次:</span>
+                                        <span className="value">{allTransactionHashes.length} 个批次</span>
+                                    </div>
+                                    {allTransactionHashes.map((batch, index) => (
+                                        <div key={index} className="info-item batch-info">
+                                            <span className="label">第{batch.batch}批次:</span>
+                                            <div className="batch-details">
+                                                <span className="value tx-hash">{batch.hash}</span>
+                                                <span className="batch-address-count">({batch.addressCount}个地址)</span>
+                                                <a
+                                                    href={`https://explorer.solana.com/tx/${batch.hash}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="explorer-link"
+                                                >
+                                                    查看
+                                                </a>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </>
+                            ) : (
+                                // 单批次交易信息（兼容旧版本）
+                                <>
+                                    <div className="info-item">
+                                        <span className="label">交易哈希:</span>
+                                        <span className="value tx-hash">{transactionHash || '获取中...'}</span>
+                                    </div>
+                                    <div className="info-item">
+                                        <span className="label">查询链接:</span>
+                                        {transactionHash ? (
                                             <a
-                                                href={`https://explorer.solana.com/tx/${batch.hash}`}
+                                                href={`https://explorer.solana.com/tx/${transactionHash}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="explorer-link"
                                             >
-                                                查看
+                                                Solana Explorer
                                             </a>
-                                        </div>
+                                        ) : (
+                                            <span className="value">请稍后查看</span>
+                                        )}
                                     </div>
-                                ))}
-                            </>
-                        ) : (
-                            // 单批次交易信息（兼容旧版本）
-                            <>
+                                </>
+                            )}
+                            {postTitle && (
                                 <div className="info-item">
-                                    <span className="label">交易哈希:</span>
-                                    <span className="value tx-hash">{transactionHash || '获取中...'}</span>
+                                    <span className="label">帖子原地址:</span>
+                                    <span className="value post-title">{postUrl ? postUrl : '未知'}</span>
                                 </div>
-                                <div className="info-item">
-                                    <span className="label">查询链接:</span>
-                                    {transactionHash ? (
-                                        <a
-                                            href={`https://explorer.solana.com/tx/${transactionHash}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="explorer-link"
-                                        >
-                                            Solana Explorer
-                                        </a>
-                                    ) : (
-                                        <span className="value">请稍后查看</span>
-                                    )}
-                                </div>
-                            </>
-                        )}
-                        {postTitle && (
-                            <div className="info-item">
-                                <span className="label">帖子原地址:</span>
-                                <span className="value post-title">{postUrl ? postUrl : '未知'}</span>
-                            </div>
-                        )}
-                    </div>
+                            )}
+                        </div>
 
-                    {/* 复制预览 */}
-                    <div className="copy-preview">
-                        <h4>复制内容预览 -- 注意: 请使用Markdown格式发布 </h4>
-                        <div className="preview-content">
-                            <pre>{generateWinnersText()}</pre>
+                        {/* 复制预览 */}
+                        <div className="copy-preview" title="预览将要复制到剪贴板的内容，支持Markdown格式">
+                            <h4 className="section-title">
+                                <svg className="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                </svg>
+                                复制内容预览
+                                <span className="status-badge info">可复制</span>
+                            </h4>
+                            <p className="preview-note">注意: 请使用Markdown格式发布</p>
+                            <div className="help-tip">
+                                <svg className="help-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                                </svg>
+                                <span>点击下方按钮可一键复制并跳转到回复页面</span>
+                            </div>
+                            <div className="preview-content">
+                                <pre>{generateWinnersText()}</pre>
+                            </div>
+                            <div className="error-tip">
+                                <svg className="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <line x1="12" y1="8" x2="12" y2="12" />
+                                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                                </svg>
+                                <span>如果复制失败，请手动选择文本复制</span>
+                            </div>
                         </div>
                     </div>
+
+                    {/* 打赏模式下的验证信息 */}
+                    {lotteryResultInfo && lotteryResultInfo.isTipLottery && (
+                        <div className="verification-info">
+                            <h4>验证信息</h4>
+                            <div className="verification-links">
+                                <div className="verification-item">
+                                    <span className="label">验证地址:</span>
+                                    <a
+                                        href={`${LOTTERY_API_CONFIG.BASE_URL}/verify`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="verification-link"
+                                    >
+                                        {`${LOTTERY_API_CONFIG.BASE_URL}/verify`}
+                                    </a>
+                                </div>
+                                {lotteryResultInfo.githubCommit && (
+                                    <div className="verification-item">
+                                        <span className="label">GitHub地址:</span>
+                                        <a
+                                            href={lotteryResultInfo.githubCommit.fileUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="verification-link"
+                                        >
+                                            {lotteryResultInfo.githubCommit.repository}
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="modal-footer">

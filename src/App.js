@@ -30,18 +30,21 @@ function App() {
 
   // 地址和空投相关状态
   const [targetAddresses, setTargetAddresses] = useState([]);
-  const [airdropAmount, setAirdropAmount] = useState('0.001');
-  const [airdropToken, setAirdropToken] = useState('');
+  const [airdropAmount, setAirdropAmount] = useState('10'); // 默认V2EX代币金额
+
+  // 新增：空投类型选择
+  const [airdropType, setAirdropType] = useState('v2ex'); // 'solana' 或 'v2ex'
 
   // 中奖人弹窗状态
-  const [showWinnersModal, setShowWinnersModal] = useState(false);
   const [winnersInfo, setWinnersInfo] = useState({
     winners: [],
     transactionHash: '',
     allTransactionHashes: [], // 新增：所有批次的交易哈希
     postUrl: '',
-    postTitle: ''
+    postTitle: '',
+    lotteryResultInfo: null // 新增：抽奖结果信息（用于打赏模式）
   });
+  const [showWinnersModal, setShowWinnersModal] = useState(false);
 
   // RPC端点状态
   const [rpcEndpoint, setRpcEndpoint] = useState(() => {
@@ -249,6 +252,41 @@ function App() {
     }
   };
 
+  // 格式化Token地址显示
+  const formatTokenAddress = (address) => {
+    if (!address || address.trim() === '') return 'SOL (原生代币)';
+    if (address.length <= 10) return address;
+    return `${address.substring(0, 5)}...${address.substring(address.length - 5)}`;
+  };
+
+  // 获取当前选择的Token地址
+  const getCurrentTokenAddress = () => {
+    if (airdropType === 'v2ex') {
+      return '9raUVuzeWUk53co63M4WXLWPWE4Xc6Lpn7RS9dnkpump';
+    }
+    return ''; // SOL空投
+  };
+
+  // 获取当前Token地址的显示名称
+  const getCurrentTokenDisplayName = () => {
+    if (airdropType === 'v2ex') {
+      return 'V2EX 代币';
+    }
+    return 'SOL (原生代币)';
+  };
+
+  // 根据空投类型获取默认金额
+  const getDefaultAmount = (type) => {
+    if (type === 'v2ex') {
+      return '10';
+    }
+    return '0.005';
+  };
+
+  // 当空投类型改变时，自动更新金额
+  useEffect(() => {
+    setAirdropAmount(getDefaultAmount(airdropType));
+  }, [airdropType]);
 
 
   // 执行批量空投
@@ -285,14 +323,14 @@ function App() {
       let tokenAmount = null;
 
       // 判断是SOL空投还是Token空投
-      if (airdropToken && airdropToken.trim()) {
+      if (airdropType === 'v2ex') {
         try {
-          tokenMint = new PublicKey(airdropToken.trim());
+          tokenMint = new PublicKey(getCurrentTokenAddress());
           isTokenAirdrop = true;
           tokenAmount = parseFloat(airdropAmount);
-          addLog(`检测到Token空投: ${airdropToken.substring(0, 8)}...`, 'info');
+          addLog(`检测到V2EX Token空投: ${getCurrentTokenDisplayName()}`, 'info');
         } catch (error) {
-          throw new Error(`Token地址格式无效: ${airdropToken}`);
+          throw new Error(`V2EX Token地址格式无效: ${getCurrentTokenAddress()}`);
         }
       } else {
         // SOL空投
@@ -302,7 +340,7 @@ function App() {
 
       addLog(`使用已连接钱包: ${fromPubkey.toString().substring(0, 8)}...`, 'info');
       if (isTokenAirdrop) {
-        addLog(`空投参数: 金额 ${airdropAmount} Tokens, Token地址 ${airdropToken.substring(0, 8)}..., 地址数量 ${targetAddresses.length}`, 'info');
+        addLog(`空投参数: 金额 ${airdropAmount} ${getCurrentTokenDisplayName()}, Token地址 ${formatTokenAddress(getCurrentTokenAddress())}, 地址数量 ${targetAddresses.length}`, 'info');
       }
 
       // 在分批前解析 .sol 域名到公钥
@@ -344,6 +382,26 @@ function App() {
 
       addLog(`地址验证完成，有效地址: ${resolvedAddresses.length} 个`, 'success');
 
+      // 如果是V2EX代币空投，检查发送方是否有代币账户
+      if (isTokenAirdrop) {
+        addLog('检查发送方V2EX代币账户...', 'info');
+        const fromTokenAccount = await getAssociatedTokenAddress(tokenMint, fromPubkey);
+
+        try {
+          const fromTokenAccountInfo = await connection.getAccountInfo(fromTokenAccount);
+          if (!fromTokenAccountInfo) {
+            addLog('发送方没有V2EX代币账户，需要先创建账户', 'warning');
+            showMessage('发送方没有V2EX代币账户，请先确保有V2EX代币余额', 'warning');
+            return;
+          }
+          addLog('发送方V2EX代币账户检查通过', 'success');
+        } catch (error) {
+          addLog('检查发送方V2EX代币账户失败，请确保有V2EX代币余额', 'error');
+          showMessage('检查发送方V2EX代币账户失败', 'error');
+          return;
+        }
+      }
+
       // 智能分批处理
       const buildBatchesBySize = async (addresses) => {
         const preparedBatches = [];
@@ -359,20 +417,20 @@ function App() {
 
           while (index < addresses.length) {
             const addr = addresses[index];
-            
+
             if (isTokenAirdrop) {
               // Token空投逻辑
               const toPubkey = new PublicKey(addr.publicKey);
               const toTokenAccount = await getAssociatedTokenAddress(tokenMint, toPubkey);
               const fromTokenAccount = await getAssociatedTokenAddress(tokenMint, fromPubkey);
-                tx.add(
-                  createTransferInstruction(
-                    fromTokenAccount,
-                    toTokenAccount,
-                    fromPubkey,
-                    tokenAmount * Math.pow(10, 9) // 假设9位小数，实际应该从Token元数据获取
-                  )
-                );
+              tx.add(
+                createTransferInstruction(
+                  fromTokenAccount,
+                  toTokenAccount,
+                  fromPubkey,
+                  tokenAmount * Math.pow(10, 6) // V2EX代币有6位小数
+                )
+              );
             } else {
               // SOL空投逻辑
               const amount = solToLamports(airdropAmount);
@@ -429,7 +487,7 @@ function App() {
                   fromTokenAccount,
                   toTokenAccount,
                   fromPubkey,
-                  tokenAmount * Math.pow(10, 9)
+                  tokenAmount * Math.pow(10, 6)
                 )
               );
             } else {
@@ -486,17 +544,46 @@ function App() {
           const globalIndexZero = processedCount + i;
 
           if (isTokenAirdrop) {
-            // Token空投逻辑
+            // V2EX Token空投逻辑
             const toPubkey = new PublicKey(target.publicKey);
             const toTokenAccount = await getAssociatedTokenAddress(tokenMint, toPubkey);
-            // 获取发送方的Token账户
             const fromTokenAccount = await getAssociatedTokenAddress(tokenMint, fromPubkey);
+
+            // 检查接收方是否有Token账户，如果没有需要创建
+            try {
+              const toTokenAccountInfo = await connection.getAccountInfo(toTokenAccount);
+              if (!toTokenAccountInfo) {
+                // 接收方没有Token账户，需要创建
+                addLog(`为接收方 ${target.publicKey.substring(0, 8)}... 创建V2EX代币账户`, 'info');
+                transaction.add(
+                  createAssociatedTokenAccountInstruction(
+                    fromPubkey, // 支付创建费用的账户
+                    toTokenAccount, // 要创建的Token账户
+                    toPubkey, // Token账户的所有者
+                    tokenMint // Token的Mint地址
+                  )
+                );
+              }
+            } catch (error) {
+              // 如果获取账户信息失败，假设需要创建账户
+              addLog(`为接收方 ${target.publicKey.substring(0, 8)}... 创建V2EX代币账户`, 'info');
+              transaction.add(
+                createAssociatedTokenAccountInstruction(
+                  fromPubkey, // 支付创建费用的账户
+                  toTokenAccount, // 要创建的Token账户
+                  toPubkey, // Token账户的所有者
+                  tokenMint // Token的Mint地址
+                )
+              );
+            }
+
+            // 添加转账指令 - V2EX代币有6位小数
             transaction.add(
               createTransferInstruction(
                 fromTokenAccount,
                 toTokenAccount,
                 fromPubkey,
-                tokenAmount * Math.pow(10, 9)
+                tokenAmount * Math.pow(10, 6) // V2EX代币有6位小数
               )
             );
           } else {
@@ -678,13 +765,14 @@ function App() {
         }));
 
         // 设置中奖人信息并显示弹窗
-        setWinnersInfo({
+        setWinnersInfo(prev => ({
           winners: winnersData,
           transactionHash: lastSuccessfulTransactionHash,
           allTransactionHashes: allTransactionHashes, // 传递所有批次的交易哈希
           postUrl: v2exParseResult?.sourceUrl || '',
-          postTitle: v2exParseResult?.title || 'V2EX帖子'
-        });
+          postTitle: v2exParseResult?.title || 'V2EX帖子',
+          lotteryResultInfo: prev.lotteryResultInfo // 保留之前的抽奖结果信息，而不是覆盖为null
+        }));
         setShowWinnersModal(true);
 
         addLog(`🎯 显示中奖人信息弹窗，中奖用户: ${winnersData.length} 个`, 'info');
@@ -710,7 +798,7 @@ function App() {
       } else if (error.message && (error.message.includes('failed to fetch') || error.message.includes('ERR_CONNECTION_RESET'))) {
         showMessage('网络连接失败，请检查网络配置或尝试切换网络', 'error');
       } else if (error.message && error.message.includes('insufficient funds')) {
-        const tokenType = airdropToken && airdropToken.trim() ? 'Token' : 'SOL';
+        const tokenType = airdropType && airdropType.trim() ? 'Token' : 'SOL';
         showMessage(`钱包余额不足，请确保有足够的 ${tokenType} 支付交易费用和空投金额`, 'error');
       } else if (error.message && error.message.includes('User rejected')) {
         showMessage('用户取消了交易签名', 'warning');
@@ -868,13 +956,6 @@ function App() {
                         <button
                           className="btn btn-primary"
                           onClick={() => {
-                            // 检查钱包连接状态
-                            if (!userWallet || !userWallet.publicKey) {
-                              showMessage('请先连接钱包再进行抽奖操作', 'warning');
-                              addLog('用户尝试抽奖但钱包未连接', 'warning');
-                              return;
-                            }
-
                             setShowV2exResultModal(true);
                             // 设置一个标记，表示这是抽奖操作
                             setV2exParseResult(prev => ({ ...prev, isLotteryOperation: true }));
@@ -972,14 +1053,15 @@ function App() {
                 </p>
 
                 <div className="form-group">
-                  <label className="form-label">空投Token地址</label>
-                  <input
-                    type="text"
+                  <label className="form-label">空投类型</label>
+                  <select
                     className="form-control"
-                    value={airdropToken}
-                    onChange={(e) => setAirdropToken(e.target.value)}
-                    placeholder="输入Token的Mint地址 (留空表示空投SOL)"
-                  />
+                    value={airdropType}
+                    onChange={(e) => setAirdropType(e.target.value)}
+                  >
+                    <option value="solana">SOL (原生代币)</option>
+                    <option value="v2ex">V2EX 代币</option>
+                  </select>
                 </div>
 
                 <div className="form-group">
@@ -989,8 +1071,8 @@ function App() {
                     className="form-control"
                     value={airdropAmount}
                     onChange={(e) => setAirdropAmount(e.target.value)}
-                    placeholder="0.01"
-                    step="0.01"
+                    placeholder={airdropType === 'v2ex' ? '10' : '0.005'}
+                    step={airdropType === 'v2ex' ? '1' : '0.001'}
                     min="0"
                   />
                 </div>
@@ -1002,16 +1084,16 @@ function App() {
                   </div>
                   <div className="summary-item">
                     <span className="label">空投Token:</span>
-                    <span className="value">{airdropToken || 'SOL (原生代币)'}</span>
+                    <span className="value">{getCurrentTokenDisplayName()}</span>
                   </div>
                   <div className="summary-item">
                     <span className="label">单个空投金额:</span>
-                    <span className="value">{airdropAmount} {airdropToken ? 'Tokens' : 'SOL'}</span>
+                    <span className="value">{airdropAmount} {airdropType === 'v2ex' ? 'V2EX' : 'SOL'}</span>
                   </div>
                   <div className="summary-item">
                     <span className="label">空投总价值:</span>
                     <span className="value">
-                      {targetAddresses.length > 0 ? (parseFloat(airdropAmount || 0) * targetAddresses.length).toFixed(6) : '0'} {airdropToken ? 'Tokens' : 'SOL'}
+                      {targetAddresses.length > 0 ? (parseFloat(airdropAmount || 0) * targetAddresses.length).toFixed(6) : '0'} {airdropType === 'v2ex' ? 'V2EX' : 'SOL'}
                     </span>
                   </div>
                   <div className="summary-item">
@@ -1030,19 +1112,19 @@ function App() {
                       if (!userWallet || !userWallet.publicKey) {
                         addLog('用户尝试空投但钱包未连接，正在自动连接钱包...', 'info');
                         showMessage('正在连接钱包...', 'info');
-                        
+
                         try {
                           // 自动连接钱包
                           const result = await connectWallet();
                           addLog('钱包连接成功，继续空投流程', 'success');
                           showMessage('钱包连接成功！', 'success');
-                          
+
                           // 等待一下让钱包状态更新
                           await new Promise(resolve => setTimeout(resolve, 1000));
-                          
+
                           // 延时1秒后继续执行空投操作
                           addLog('延时1秒后继续执行空投操作...', 'info');
-                          
+
                           // 使用连接结果中的钱包信息，而不是依赖可能未更新的状态
                           if (result && result.success && result.wallet) {
                             addLog('使用连接结果中的钱包信息继续执行空投...', 'info');
@@ -1057,11 +1139,11 @@ function App() {
                           return;
                         }
                       }
-                      
+
                       // 执行空投（使用当前状态中的钱包信息）
                       executeBatchAirdrop();
                     }}
-                    disabled={targetAddresses.length === 0 || !airdropAmount || parseFloat(airdropAmount) <= 0 || (airdropToken && airdropToken.trim() && !airdropToken.match(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/))}
+                    disabled={targetAddresses.length === 0 || !airdropAmount || parseFloat(airdropAmount) <= 0}
                   >
                     <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 2L2 7l10 5 10-5-10-5z" />
@@ -1117,6 +1199,14 @@ function App() {
           userWallet={userWallet}
           rpcEndpoint={rpcEndpoint}
           connectWallet={connectWallet}
+          onLotteryComplete={(lotteryInfo) => {
+            // 当抽奖完成时，更新 winnersInfo 中的抽奖结果信息
+            setWinnersInfo(prev => ({
+              ...prev,
+              lotteryResultInfo: lotteryInfo
+            }));
+            addLog('抽奖结果信息已更新', 'info');
+          }}
         />
       )}
 
@@ -1138,6 +1228,8 @@ function App() {
         postUrl={winnersInfo.postUrl}
         postTitle={winnersInfo.postTitle}
         onAddLog={addLog}
+        tokenType={airdropType} // 新增：传递当前选择的代币类型
+        lotteryResultInfo={winnersInfo.lotteryResultInfo} // 新增：传递抽奖结果信息
       />
     </div>
   );

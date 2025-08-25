@@ -1,13 +1,17 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { drawUsers } from '../utils/lottery';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { drawUsers, executeLotteryViaAPI, checkLotteryAPIStatus } from '../utils/lottery';
 import { batchParseUserInfo } from '../utils/v2ex';
 import TipModal from './TipModal';
+import LotteryCompleteModal from './LotteryCompleteModal';
 
-const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMessage, defaultShowLottery = false, userWallet, rpcEndpoint, connectWallet }) => {
+const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMessage, defaultShowLottery = false, userWallet, rpcEndpoint, connectWallet, onLotteryComplete }) => {
   const [showLotterySettings, setShowLotterySettings] = useState(defaultShowLottery);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [selectionCount, setSelectionCount] = useState(10);
   const [excludePostAuthor, setExcludePostAuthor] = useState(true);
+  const [needAirdrop, setNeedAirdrop] = useState(true); // 新增：是否需要空投
+  const [showLotteryComplete, setShowLotteryComplete] = useState(false); // 新增：显示抽奖完成界面
+  const [showLotteryCompleteModal, setShowLotteryCompleteModal] = useState(false); // 新增：显示抽奖完成模态框
   const [parsingAddresses, setParsingAddresses] = useState(false);
   const [parsingProgress, setParsingProgress] = useState({ current: 0, total: 0, percentage: 0 });
   const [isPostContentExpanded, setIsPostContentExpanded] = useState(false);
@@ -15,6 +19,11 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
   // 打赏相关状态
   const [showTipModal, setShowTipModal] = useState(false);
   const [lotterySeed, setLotterySeed] = useState(null);
+  const [lotteryResultInfo, setLotteryResultInfo] = useState(null);
+
+  // 新增：处理没有地址用户的选项模态框
+  const [showAddressOptionsModal, setShowAddressOptionsModal] = useState(false);
+  const [usersWithoutAddresses, setUsersWithoutAddresses] = useState([]);
 
   // 根据回复数量动态设置选择数量的默认值
   useEffect(() => {
@@ -29,22 +38,16 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
   // 检查帖子内容是否超过4行
   const isPostContentLong = result?.content && result.content.split('\n').length > 4;
 
-  // 抽奖功能 - 先显示打赏菜单
+  // 抽奖功能 - 先显示打赏菜单，与首页保持一致
   const handleRandomSelection = useCallback(() => {
-    // 检查钱包连接状态
-    if (!userWallet || !userWallet.publicKey) {
-      onShowMessage('请先连接钱包再进行抽奖操作', 'warning');
-      onAddLog('用户尝试抽奖但钱包未连接', 'warning');
-      return;
-    }
-
     if (!result?.detailedReplies || result.detailedReplies.length === 0) {
       onShowMessage('没有可用的回复进行抽奖', 'warning');
       return;
     }
-    // 先显示打赏菜单
+
+    // 先显示打赏菜单，与首页逻辑保持一致
     setShowTipModal(true);
-  }, [result?.detailedReplies, onShowMessage, userWallet, onAddLog]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [result?.detailedReplies, onShowMessage]);
 
   // 处理打赏完成
   const handleTipComplete = useCallback((seed, tipType) => {
@@ -58,8 +61,20 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
     setShowLotterySettings(true);
   }, [onAddLog]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 处理抽奖完成模态框
+  const handleLotteryCompleteModal = useCallback(() => {
+    setShowLotteryCompleteModal(true);
+  }, []);
+
+  // 显示抽奖设置
+  const showLotterySettingsModal = useCallback(() => {
+    setShowLotteryComplete(false);
+    setShowLotteryCompleteModal(false);
+    setShowLotterySettings(true);
+  }, []);
+
   // 执行抽奖选择
-  const executeRandomSelection = useCallback(() => {
+  const executeRandomSelection = useCallback(async () => {
     if (!result?.detailedReplies || result.detailedReplies.length === 0) {
       onShowMessage('没有可用的回复进行抽奖', 'warning');
       return;
@@ -67,7 +82,6 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
 
     // 检查是否已经完成打赏流程（有随机种子）
     if (!lotterySeed) {
-      onShowMessage('请先完成打赏再开始抽奖', 'warning');
       // 重新显示打赏界面
       setShowTipModal(true);
       return;
@@ -93,33 +107,158 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
         floor: reply.floor || index + 1
       }));
 
-
-
       if (allUsers.length === 0) {
         onShowMessage('没有符合条件的用户进行抽奖', 'warning');
         return;
       }
 
-      // 使用抽奖工具类，排除帖子作者，使用打赏设置的种子
-      const selected = drawUsers({
-        allUsers: allUsers,
-        excludeUsers: excludeUsers,
-        count: selectionCount,
-        seed: lotterySeed
-      });
+      // 判断是否使用接口抽奖（打赏后的抽奖）
+      const isTipLottery = lotterySeed && lotterySeed.length > 20; // 交易哈希通常很长
 
-      setSelectedUsers(selected);
-      setShowLotterySettings(false);
+      if (isTipLottery) {
+        // 打赏后的抽奖：使用接口请求
+        onAddLog(`🎲 检测到打赏抽奖，使用接口请求执行抽奖...`, 'info');
+        onShowMessage('正在通过接口执行抽奖...', 'info');
 
-      const authorNote = excludePostAuthor && postAuthor ? `（已排除作者：${postAuthor}）` : '';
-      onAddLog(`🎲 抽奖完成！从 ${allUsers.length} 个可用用户中选择了 ${selected.length} 个${authorNote}`, 'success');
-      onShowMessage(`抽奖完成！选择了 ${selected.length} 个用户`, 'success');
+        // 检查接口状态
+        const apiStatus = await checkLotteryAPIStatus();
+        if (!apiStatus.success) {
+          onAddLog(`⚠️ 抽奖接口不可用，回退到本地抽奖: ${apiStatus.error}`, 'warning');
+          onShowMessage('抽奖接口不可用，使用本地抽奖', 'warning');
+          // 回退到本地抽奖
+          const selected = drawUsers({
+            allUsers: allUsers,
+            excludeUsers: excludeUsers,
+            count: selectionCount,
+            seed: lotterySeed
+          });
+          setSelectedUsers(selected);
+          setShowLotterySettings(false);
+
+          const authorNote = excludePostAuthor && postAuthor ? `（已排除作者：${postAuthor}）` : '';
+          onAddLog(`🎲 本地抽奖完成！从 ${allUsers.length} 个可用用户中选择了 ${selected.length} 个${authorNote}`, 'success');
+          onShowMessage(`本地抽奖完成！选择了 ${selected.length} 个用户`, 'success');
+
+          if (!needAirdrop) {
+            setTimeout(() => {
+              onAddLog(`🎉 抽奖完成！成功抽取了 ${selected.length} 个用户`, 'success');
+              onShowMessage(`🎉 抽奖完成！成功抽取了 ${selected.length} 个用户`, 'success');
+              setShowLotteryCompleteModal(true);
+            }, 1000);
+          }
+          return;
+        }
+
+        // 执行接口抽奖
+        const lotteryResult = await executeLotteryViaAPI({
+          users: allUsers,
+          excludeUsers: excludeUsers,
+          drawCount: selectionCount,
+          seed: lotterySeed,
+          environment: 'test', // 使用测试环境，生产环境可设置为 'prod'
+          postInfo: {
+            postId: result.postId,
+            title: result.title,
+            content: result.content,
+            replyCount: result.replyCount,
+            sourceUrl: result.sourceUrl
+          }
+        });
+
+        if (lotteryResult.success) {
+          setSelectedUsers(lotteryResult.winners);
+          setShowLotterySettings(false);
+
+          const authorNote = excludePostAuthor && postAuthor ? `（已排除作者：${postAuthor}）` : '';
+          onAddLog(`🎲 接口抽奖完成！从 ${lotteryResult.totalUsers} 个可用用户中选择了 ${lotteryResult.winners.length} 个${authorNote}`, 'success');
+          onShowMessage(`接口抽奖完成！选择了 ${lotteryResult.winners.length} 个用户`, 'success');
+
+          // 检查GitHub提交结果
+          if (lotteryResult.githubCommit && lotteryResult.githubCommit.success) {
+            onAddLog(`🏠 目标仓库: ${lotteryResult.githubCommit.repository}`, 'info');
+          }
+
+          // 存储抽奖结果信息，包括GitHub提交信息
+          setLotteryResultInfo({
+            winners: lotteryResult.winners,
+            totalUsers: lotteryResult.totalUsers,
+            drawCount: selectionCount,
+            seed: lotterySeed,
+            environment: 'test',
+            githubCommit: lotteryResult.githubCommit,
+            isTipLottery: true
+          });
+
+          // 通知父组件抽奖完成
+          if (onLotteryComplete) {
+            onLotteryComplete({
+              winners: lotteryResult.winners,
+              totalUsers: lotteryResult.totalUsers,
+              drawCount: selectionCount,
+              seed: lotterySeed,
+              environment: 'test',
+              githubCommit: lotteryResult.githubCommit,
+              isTipLottery: true
+            });
+          }
+
+          // 如果不需要空投，直接显示完成消息
+          if (!needAirdrop) {
+            setTimeout(() => {
+              onAddLog(`🎉 抽奖完成！成功抽取了 ${lotteryResult.winners.length} 个用户`, 'success');
+              onShowMessage(`🎉 抽奖完成！成功抽取了 ${lotteryResult.winners.length} 个用户`, 'success');
+              setShowLotteryCompleteModal(true);
+            }, 1000);
+          }
+        } else {
+          throw new Error(`接口抽奖失败: ${lotteryResult.error}`);
+        }
+      } else {
+        // 不打赏的抽奖：使用本地抽奖逻辑
+        onAddLog(`🎲 使用本地抽奖逻辑...`, 'info');
+
+        const selected = drawUsers({
+          allUsers: allUsers,
+          excludeUsers: excludeUsers,
+          count: selectionCount,
+          seed: lotterySeed
+        });
+
+        setSelectedUsers(selected);
+        setShowLotterySettings(false);
+
+        // 通知父组件本地抽奖完成
+        if (onLotteryComplete) {
+          onLotteryComplete({
+            winners: selected,
+            totalUsers: allUsers.length,
+            drawCount: selectionCount,
+            seed: lotterySeed,
+            environment: 'local',
+            githubCommit: null,
+            isTipLottery: false
+          });
+        }
+
+        const authorNote = excludePostAuthor && postAuthor ? `（已排除作者：${postAuthor}）` : '';
+        onAddLog(`🎲 本地抽奖完成！从 ${allUsers.length} 个可用用户中选择了 ${selected.length} 个${authorNote}`, 'success');
+        onShowMessage(`本地抽奖完成！选择了 ${selected.length} 个用户`, 'success');
+
+        // 如果不需要空投，直接显示完成消息
+        if (!needAirdrop) {
+          setTimeout(() => {
+            onAddLog(`🎉 抽奖完成！成功抽取了 ${selected.length} 个用户`, 'success');
+            onShowMessage(`🎉 抽奖完成！成功抽取了 ${selected.length} 个用户`, 'success');
+            setShowLotteryCompleteModal(true);
+          }, 1000);
+        }
+      }
     } catch (error) {
       console.error('抽奖失败:', error.message);
       onAddLog(`抽奖失败: ${error.message}`, 'error');
       onShowMessage(`抽奖失败: ${error.message}`, 'error');
     }
-  }, [result?.detailedReplies, result?.author, selectionCount, excludePostAuthor, lotterySeed, onAddLog, onShowMessage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [result?.detailedReplies, result?.author, selectionCount, excludePostAuthor, lotterySeed, onAddLog, onShowMessage, needAirdrop, onLotteryComplete]);
 
   // 解析没有 Solana 地址的用户
   const parseMissingAddresses = useCallback(async () => {
@@ -231,6 +370,13 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
         const successCount = updatedUsers.filter(user => user.address && user.address !== '').length;
         onAddLog(`🎉 地址解析完成！成功为 ${successCount}/${selectedUsers.length} 个用户找到 Solana 地址`, 'success');
         onShowMessage(`地址解析完成！${successCount} 个用户获得地址`, 'success');
+
+        // 检查是否还有用户没有地址
+        const stillWithoutAddresses = updatedUsers.filter(user => !user.address || user.address === '');
+        if (stillWithoutAddresses.length > 0) {
+          setUsersWithoutAddresses(stillWithoutAddresses);
+          setShowAddressOptionsModal(true);
+        }
       } else {
         onAddLog(`❌ 地址解析失败: ${parseResult.error}`, 'error');
         onShowMessage(`地址解析失败: ${parseResult.error}`, 'error');
@@ -245,41 +391,140 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
     }
   }, [selectedUsers, onAddLog, onShowMessage]);
 
+  // 处理没有地址用户的选择
+  const handleAddressOptionsChoice = useCallback((choice) => {
+
+    if (choice === 'replace') {
+      // 选择重新抽取：排除没有地址的用户，重新抽取对应数量
+      const usersWithAddresses = selectedUsers.filter(user => user.address && user.address !== '');
+      const needMoreCount = selectionCount - usersWithAddresses.length;
+
+      if (needMoreCount > 0) {
+        // 从原始回复中排除已有用户，重新抽取
+        const postAuthor = result.author;
+        const excludeUsers = (postAuthor && excludePostAuthor) ? [postAuthor] : [];
+
+        // 排除已经选中的用户（有地址的）
+        const excludeUsernames = usersWithAddresses.map(u => u.username);
+        excludeUsers.push(...excludeUsernames);
+
+        // 从原始回复中重新选择 - 不预先过滤地址，从所有用户中抽取
+        let allUsers = result.detailedReplies.map((reply, index) => ({
+          userId: reply.userId || `用户${index + 1}`,
+          username: reply.userId || `用户${index + 1}`,
+          address: reply.solanaAddresses && reply.solanaAddresses.length > 0 ? reply.solanaAddresses[0] : '',
+          hasSolanaAddress: !!(reply.solanaAddresses && reply.solanaAddresses.length > 0),
+          replyContent: reply.content || '',
+          replyTime: reply.replyTime || '',
+          floor: reply.floor || index + 1
+        }));
+
+        // 检查是否有足够的用户可供抽取（不预先过滤地址）
+        if (allUsers.length <= excludeUsers.length) {
+          onAddLog(`❌ 重新抽取失败：可用用户数量不足，需要 ${needMoreCount} 个，但只有 ${allUsers.length - excludeUsers.length} 个可用`, 'error');
+          onShowMessage('重新抽取失败：可用用户数量不足', 'error');
+          setShowAddressOptionsModal(false);
+          setUsersWithoutAddresses([]);
+          return;
+        }
+
+        try {
+          // 重新抽取 - 从所有未被选中的用户中抽取，不预先过滤地址
+          const newSelected = drawUsers({
+            allUsers: allUsers,
+            excludeUsers: excludeUsers,
+            count: needMoreCount,
+            seed: lotterySeed
+          });
+
+          // 合并结果
+          const finalUsers = [...usersWithAddresses, ...newSelected];
+          setSelectedUsers(finalUsers);
+
+          onAddLog(`🔄 已重新抽取 ${needMoreCount} 个用户，总计 ${finalUsers.length} 个用户。注意：新抽取的用户可能需要解析地址`, 'success');
+          onShowMessage(`重新抽取完成！现在有 ${finalUsers.length} 个用户，可能需要解析地址`, 'success');
+        } catch (error) {
+          console.error('重新抽取失败:', error);
+          onAddLog(`❌ 重新抽取失败: ${error.message}`, 'error');
+          onShowMessage(`重新抽取失败: ${error.message}`, 'error');
+        }
+      } else {
+        onAddLog(`✅ 当前已有足够的有效用户，无需重新抽取`, 'info');
+        onShowMessage('当前已有足够的有效用户', 'info');
+      }
+    } else if (choice === 'keep') {
+      // 选择保留：记录日志说明这些用户没有地址
+      const missingCount = usersWithoutAddresses.length;
+      onAddLog(`📝 选择保留 ${missingCount} 个没有地址的用户，将在结果中特别说明`, 'info');
+      onShowMessage(`已保留 ${missingCount} 个没有地址的用户，可以继续操作`, 'info');
+
+      // 更新用户状态，标记没有地址的用户为已处理
+      setSelectedUsers(prevUsers =>
+        prevUsers.map(user => {
+          if (!user.address || user.address === '') {
+            return { ...user, addressHandled: 'kept' };
+          }
+          return user;
+        })
+      );
+    }
+
+    // 关闭选项模态框
+    setShowAddressOptionsModal(false);
+    setUsersWithoutAddresses([]);
+  }, [selectedUsers, selectionCount, result?.detailedReplies, result?.author, excludePostAuthor, onAddLog, onShowMessage, usersWithoutAddresses.length, lotterySeed]);
+
   // 应用抽奖结果
-  const applyLotteryResult = () => {
-    if (selectedUsers.length === 0) {
-      onShowMessage('没有选中的用户', 'warning');
-      return;
+  const applyLotteryResult = useCallback(() => {
+    if (needAirdrop) {
+      // 如果需要空投，检查是否有用户没有地址
+      const usersWithoutAddresses = selectedUsers.filter(user =>
+        (!user.address || user.address === '') && user.addressHandled !== 'kept'
+      );
+
+      if (usersWithoutAddresses.length > 0) {
+        // 有用户没有地址，显示地址选项模态框
+        setUsersWithoutAddresses(usersWithoutAddresses);
+        setShowAddressOptionsModal(true);
+      } else {
+        // 所有用户都有地址，可以直接使用
+        onAddLog(`✅ 抽奖结果应用成功！${selectedUsers.length} 个用户都有 Solana 地址，可以进行空投操作`, 'success');
+        onShowMessage(`抽奖结果应用成功！${selectedUsers.length} 个用户可以进行空投`, 'success');
+        // 传递完整的用户信息，包括用户名和地址
+        const userAddresses = selectedUsers.map(user => ({
+          address: user.address,
+          username: user.username
+        }));
+        onApplyAddresses(userAddresses);
+      }
+    } else {
+      // 不需要空投，显示抽奖完成界面
+      onAddLog(`🎉 抽奖完成！成功抽取了 ${selectedUsers.length} 个用户`, 'success');
+      onShowMessage(`🎉 抽奖完成！成功抽取了 ${selectedUsers.length} 个用户`, 'success');
+      // 显示抽奖完成模态框
+      setShowLotteryCompleteModal(true);
     }
-
-    // 过滤掉没有地址的用户
-    const usersWithAddresses = selectedUsers.filter(user => user.address && user.address.trim() !== '');
-
-    if (usersWithAddresses.length === 0) {
-      onShowMessage('选中的用户都没有有效的 Solana 地址', 'warning');
-      return;
-    }
-
-    const addressesWithUsers = usersWithAddresses.map(user => ({
-      address: user.address,
-      username: user.username,
-      source: 'v2ex_lottery'
-    }));
-
-    onAddLog(`🎯 应用抽奖结果：${addressesWithUsers.length} 个有效地址`, 'info');
-    onApplyAddresses(addressesWithUsers);
-    onClose();
-  };
+  }, [selectedUsers, needAirdrop, onAddLog, onShowMessage, onApplyAddresses]);
 
   // 重置抽奖结果
   const resetLotteryResult = () => {
     setSelectedUsers([]);
     setShowLotterySettings(false);
+    setShowLotteryComplete(false);
+    setShowLotteryCompleteModal(false);
     onAddLog('🔄 抽奖结果已重置', 'info');
   };
 
-  // 检查是否有用户没有 Solana 地址
-  const hasUsersWithoutAddresses = selectedUsers.some(user => !user.address || user.address === '');
+  // 检查是否有用户没有 Solana 地址且未处理
+  const hasUsersWithoutAddresses = useMemo(() => {
+    if (!needAirdrop) {
+      // 如果不需要空投，就不需要检查地址
+      return false;
+    }
+    return selectedUsers.some(user =>
+      (!user.address || user.address === '') && user.addressHandled !== 'kept'
+    );
+  }, [selectedUsers, needAirdrop]);
 
   // 格式化时间显示
   const formatTime = (timeStr) => {
@@ -478,47 +723,51 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                             <span className="user-reply-content">: {user.replyContent}</span>
                           )}
                         </span>
-                        <span className={`user-address ${!user.address || user.address === '' ? 'missing' : ''}`}>
-                          {user.address || '暂无地址'}
-                        </span>
+                        {/* 只在需要空投时显示地址信息 */}
+                        {needAirdrop && (
+                          <span className={`user-address ${!user.address || user.address === '' ? 'missing' : ''}`}>
+                            {user.address || '暂无地址'}
+                          </span>
+                        )}
                       </span>
-                      {/* 解析状态显示 */}
-                      {user.parseStatus === 'success' && (
-                        <span className="address-status found">✅ 已解析</span>
-                      )}
-                      {user.parseStatus === 'failed' && (
-                        <span className="address-status failed">❌ 解析失败</span>
-                      )}
-                      {(!user.address || user.address === '') && !user.parseStatus && (
-                        <span className="address-status missing">需要解析</span>
-                      )}
-                      {user.address && user.address !== '' && !user.parseStatus && (
-                        <span className="address-status found">✓ 已找到</span>
+                      {/* 解析状态显示 - 只在需要空投时显示 */}
+                      {needAirdrop && (
+                        <>
+                          {user.parseStatus === 'success' && (
+                            <span className="address-status found">✅ 已解析</span>
+                          )}
+                          {user.parseStatus === 'failed' && (
+                            <span className="address-status failed">❌ 解析失败</span>
+                          )}
+                          {(!user.address || user.address === '') && !user.parseStatus && (
+                            <span className="address-status missing">需要解析</span>
+                          )}
+                          {user.address && user.address !== '' && !user.parseStatus && (
+                            <span className="address-status found">✓ 已找到</span>
+                          )}
+                        </>
                       )}
 
-                      {/* 解析到的用户信息 */}
-                      {user.parseStatus === 'success' && (
+                      {/* 解析到的用户信息 - 只在需要空投时显示 */}
+                      {needAirdrop && user.parseStatus === 'success' && (
                         <div className="parsed-user-info">
                           {user.bio && (
                             <div className="user-bio">
-                              <strong>简介:</strong> {user.bio}
+                              <span className="bio-label">个人简介:</span>
+                              <span className="bio-content">{user.bio}</span>
                             </div>
                           )}
-                          {user.website && (
-                            <div className="user-website">
-                              <strong>网站:</strong> {user.website}
-                            </div>
-                          )}
-                          {user.tagline && (
-                            <div className="user-tagline">
-                              <strong>标语:</strong> {user.tagline}
+                          {user.location && (
+                            <div className="user-location">
+                              <span className="location-label">位置:</span>
+                              <span className="location-content">{user.location}</span>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {/* 解析失败信息 */}
-                      {user.parseStatus === 'failed' && user.parseError && (
+                      {/* 解析失败信息 - 只在需要空投时显示 */}
+                      {needAirdrop && user.parseStatus === 'failed' && user.parseError && (
                         <div className="parse-error">
                           <span className="error-text">解析失败: {user.parseError}</span>
                         </div>
@@ -527,8 +776,8 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                   ))}
                 </div>
 
-                {/* 解析进度 - 保留进度显示 */}
-                {parsingAddresses && (
+                {/* 解析进度 - 只在需要空投时显示 */}
+                {needAirdrop && parsingAddresses && (
                   <div className="parse-progress">
                     <div className="progress-header">
                       <span className="progress-status">正在解析 Solana 地址...</span>
@@ -573,7 +822,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                     </div>
                     <div className="option-item">
                       <label>
-                        选择数量:
+                        数量:
                         <input
                           type="number"
                           value={selectionCount}
@@ -584,13 +833,59 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                       </label>
                     </div>
                   </div>
+
+                  {/* 新增：空投设置选项 */}
+                  <div className="option-group-row">
+                    <div className="option-item">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={needAirdrop}
+                          onChange={(e) => setNeedAirdrop(e.target.checked)}
+                        />
+                        是否需要进行空投
+                      </label>
+                      <div className="option-description">
+                        {needAirdrop ?
+                          '选中：抽奖完成后需要解析Solana地址并进行空投操作' :
+                          '未选中：抽奖完成后直接显示结果，无需解析地址和空投'
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 抽奖信息预览 */}
+                  <div className="lottery-preview">
+                    <div className="preview-header">
+                      <span>抽奖预览</span>
+                    </div>
+                    <div className="preview-content">
+                      <div className="preview-item">
+                        <span className="preview-label">总回复数：</span>
+                        <span className="preview-value">{result.detailedReplies.length}</span>
+                      </div>
+                      <div className="preview-item">
+                        <span className="preview-label">抽奖数量：</span>
+                        <span className="preview-value">{selectionCount}</span>
+                      </div>
+                      <div className="preview-item">
+                        <span className="preview-label">排除作者：</span>
+                        <span className="preview-value">{excludePostAuthor ? '是' : '否'}</span>
+                      </div>
+                      <div className="preview-item">
+                        <span className="preview-label">空投模式：</span>
+                        <span className={`preview-value ${needAirdrop ? 'preview-active' : 'preview-inactive'}`}>
+                          {needAirdrop ? '需要空投' : '仅抽奖'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                   <div className="lottery-settings-actions">
                     <button
                       className="btn btn-primary"
                       onClick={() => {
                         // 检查是否已经完成打赏流程
                         if (!lotterySeed) {
-                          onShowMessage('请先完成打赏再开始抽奖', 'warning');
                           setShowLotterySettings(false);
                           setShowTipModal(true);
                           return;
@@ -619,16 +914,27 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
               </div>
             </div>
           )}
+
+          {/* 抽奖完成界面 - 已替换为LotteryCompleteModal组件 */}
         </div>
 
         <div className="modal-footer">
           <div className="action-buttons">
             {/* 如果没有抽奖结果，显示"使用这些地址"按钮 */}
             {selectedUsers.length === 0 && (
-              <button className="btn btn-primary" onClick={() => onApplyAddresses(result.addresses)}>
+              <button className="btn btn-primary" onClick={() => {
+                // 从result.detailedReplies中构建用户地址信息
+                const userAddresses = result.detailedReplies
+                  .filter(reply => reply.solanaAddresses && reply.solanaAddresses.length > 0)
+                  .map(reply => ({
+                    address: reply.solanaAddresses[0],
+                    username: reply.userId
+                  }));
+                onApplyAddresses(userAddresses);
+              }}>
                 <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 12l2 2 4-4" />
-                  <path d="M21 12c-1 0-2-.5-2-1.5V5c0-1.5 1-2.5 2-2.5s2 1 2 2.5v5.5c0 1-1 1.5-2 1.5z" />
+                  <path d="M21 12c-1 0-2-.5-2-1.5V5c0-1.5 1-2.5-2-2.5s2 1 2 2.5v5.5c0 1-1 1.5-2 1.5z" />
                   <path d="M3 12c1 0 2-.5 2-1.5V5c0-1.5-1-2.5-2-2.5S1 3.5 1 5v5.5c0 1 1 1.5 2 1.5z" />
                 </svg>
                 使用这些地址
@@ -642,7 +948,6 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                 onClick={() => {
                   // 检查是否已经完成打赏流程
                   if (!lotterySeed) {
-                    onShowMessage('请先完成打赏再开始抽奖', 'warning');
                     setShowTipModal(true);
                     return;
                   }
@@ -661,37 +966,25 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
             {/* 如果有抽奖结果，显示所有按钮 */}
             {selectedUsers.length > 0 && (
               <div className="lottery-buttons-group">
-                {/* 警告提示 - 放在解析按钮左侧 */}
-                {hasUsersWithoutAddresses && (
+                {/* 警告提示 - 只在需要空投且有用户没有地址时显示 */}
+                {needAirdrop && hasUsersWithoutAddresses && (
                   <div className="inline-warning">
                     <span className="warning-icon">⚠️</span>
-                    <span className="warning-text">
-                      {selectedUsers.filter(u => !u.address || u.address === '').length} 个用户没有 Solana 地址, 请先解析没有地址的用户或重新抽奖.
-                    </span>
+                    <span className="warning-text">部分用户没有 Solana 地址，需要先解析地址</span>
                   </div>
                 )}
 
-                {/* 解析地址按钮 */}
-                {hasUsersWithoutAddresses && (
+                {/* 解析地址按钮 - 只在需要空投且有用户没有地址时显示 */}
+                {needAirdrop && hasUsersWithoutAddresses && (
                   <button
                     className="btn btn-warning"
                     onClick={parseMissingAddresses}
                     disabled={parsingAddresses}
                   >
-                    {parsingAddresses ? (
-                      <>
-                        <div className="loading-spinner"></div>
-                        解析中... ({parsingProgress.percentage}%)
-                      </>
-                    ) : (
-                      <>
-                        <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                          <path d="M13 8H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2z" />
-                        </svg>
-                        解析 Solana 地址
-                      </>
-                    )}
+                    <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                    {parsingAddresses ? '解析中...' : '解析地址'}
                   </button>
                 )}
 
@@ -705,18 +998,16 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                   重置抽奖
                 </button>
 
-                {/* 使用抽奖用户按钮 - 放在重置抽奖按钮右侧 */}
+                {/* 使用抽奖用户按钮 - 根据是否需要空投显示不同的文字 */}
                 <button
                   className="btn btn-primary"
                   onClick={applyLotteryResult}
-                  disabled={hasUsersWithoutAddresses}
+                  disabled={needAirdrop && hasUsersWithoutAddresses}
                 >
                   <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9 12l2 2 4-4" />
-                    <path d="M21 12c-1 0-2-.5-2-1.5V5c0-1.5 1-2.5 2-2.5s2 1 2 2.5v5.5c0 1-1 1.5-2 1.5z" />
                     <path d="M3 12c1 0 2-.5 2-1.5V5c0-1.5-1-2.5-2-2.5S1 3.5 1 5v5.5c0 1 1 1.5 2 1.5z" />
                   </svg>
-                  使用抽奖用户
+                  {needAirdrop ? '使用抽奖用户' : '完成抽奖'}
                 </button>
               </div>
             )}
@@ -740,6 +1031,104 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
         onShowMessage={onShowMessage}
         connectWallet={connectWallet}
       />
+
+      {/* 抽奖完成模态框 */}
+      <LotteryCompleteModal
+        isOpen={showLotteryCompleteModal}
+        onClose={() => setShowLotteryCompleteModal(false)}
+        winners={selectedUsers}
+        postUrl={result?.sourceUrl}
+        postTitle={result?.title}
+        onAddLog={onAddLog}
+        onResetLottery={resetLotteryResult}
+        onShowLotterySettings={showLotterySettingsModal}
+        lotteryResultInfo={lotteryResultInfo}
+      />
+
+      {/* 地址选项模态框 */}
+      {showAddressOptionsModal && (
+        <div className="modal-overlay" onClick={() => setShowAddressOptionsModal(false)}>
+          <div className="modal-content address-options-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                <svg className="modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                  <path d="M2 17l10 5 10-5" />
+                  <path d="M2 12l10 5 10-5" />
+                </svg>
+                发现没有 Solana 地址的用户
+              </h3>
+              <button className="modal-close" onClick={() => setShowAddressOptionsModal(false)}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <div className="address-options-description">
+                <p>地址解析完成后，仍有 <strong>{usersWithoutAddresses.length}</strong> 个用户没有 Solana 地址：</p>
+                <div className="users-without-addresses">
+                  {usersWithoutAddresses.map((user, index) => (
+                    <div key={index} className="user-without-address">
+                      <span className="user-username">@{user.username}</span>
+                      <span className="user-floor">#{user.floor}</span>
+                      {user.replyContent && (
+                        <span className="user-reply-content">: {user.replyContent.substring(0, 50)}...</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="options-note">请选择如何处理这些没有地址的用户：</p>
+              </div>
+
+              <div className="address-options">
+                <div className="option-item">
+                  <button
+                    className="btn btn-primary option-button"
+                    onClick={() => handleAddressOptionsChoice('replace')}
+                  >
+                    <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18" />
+                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                      <path d="M12 12h.01" />
+                      <path d="M12 16h.01" />
+                    </svg>
+                    重新抽取用户
+                  </button>
+                  <div className="option-description">
+                    将排除这些没有地址的用户，从剩余未被抽中的用户中重新抽取。新抽取的用户可能需要解析地址，但会保持原有的抽奖数量。
+                  </div>
+                </div>
+
+                <div className="option-item">
+                  <button
+                    className="btn btn-secondary option-button"
+                    onClick={() => handleAddressOptionsChoice('keep')}
+                  >
+                    <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                      <path d="M2 17l10 5 10-5" />
+                      <path d="M2 12l10 5 10-5" />
+                    </svg>
+                    保留这些用户
+                  </button>
+                  <div className="option-description">
+                    保留这些没有地址的用户，在最终结果中会特别说明他们没有 Solana 地址，无法参与空投。
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowAddressOptionsModal(false)}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
