@@ -403,10 +403,10 @@ function App() {
       }
 
       // 智能分批处理
-      const buildBatchesBySize = async (addresses) => {
+     const buildBatchesBySize = async (addresses) => {
         const preparedBatches = [];
         let index = 0;
-        const MAX_TX_SIZE = 1030;
+        const MAX_TX_SIZE = 1030; // 保守设置为1030字节，留出安全余量
         const { blockhash: sizeEstimateBlockhash } = await connection.getLatestBlockhash();
 
         while (index < addresses.length) {
@@ -415,14 +415,30 @@ function App() {
           tx.feePayer = fromPubkey;
           tx.recentBlockhash = sizeEstimateBlockhash;
 
-          while (index < addresses.length) {
+          // 设置每批最大地址数的初始限制，Token空投需要更小的批处理
+          const maxAddressesPerBatch = isTokenAirdrop ? 8 : 20;
+          let addressCountInCurrentBatch = 0;
+
+          while (index < addresses.length && addressCountInCurrentBatch < maxAddressesPerBatch) {
             const addr = addresses[index];
 
             if (isTokenAirdrop) {
-              // Token空投逻辑
+              // Token空投逻辑 - 每个地址可能需要2个指令（创建账户+转账）
               const toPubkey = new PublicKey(addr.publicKey);
               const toTokenAccount = await getAssociatedTokenAddress(tokenMint, toPubkey);
               const fromTokenAccount = await getAssociatedTokenAddress(tokenMint, fromPubkey);
+              
+              // 添加创建关联账户指令（如果需要）
+              tx.add(
+                createAssociatedTokenAccountInstruction(
+                  fromPubkey,
+                  toTokenAccount,
+                  toPubkey,
+                  tokenMint
+                )
+              );
+              
+              // 添加转账指令
               tx.add(
                 createTransferInstruction(
                   fromTokenAccount,
@@ -432,7 +448,7 @@ function App() {
                 )
               );
             } else {
-              // SOL空投逻辑
+              // SOL空投逻辑 - 每个地址只需要1个指令
               const amount = solToLamports(airdropAmount);
               tx.add(
                 SystemProgram.transfer({
@@ -456,12 +472,22 @@ function App() {
             if (fits) {
               batchAddresses.push(addr);
               index += 1;
+              addressCountInCurrentBatch += 1;
             } else {
-              tx.instructions.pop();
+              // 移除刚添加的指令
+              if (isTokenAirdrop) {
+                // 移除两个指令（转账+创建账户）
+                tx.instructions.pop(); // 转账指令
+                tx.instructions.pop(); // 创建账户指令
+              } else {
+                // 只移除一个指令（转账）
+                tx.instructions.pop();
+              }
               break;
             }
           }
 
+          // 如果当前批次为空但还有地址未处理，强制添加至少一个地址
           if (batchAddresses.length === 0 && index < addresses.length) {
             const fallbackTx = new Transaction();
             fallbackTx.feePayer = fromPubkey;
@@ -505,7 +531,10 @@ function App() {
             index += 1;
           }
 
-          preparedBatches.push({ addresses: batchAddresses });
+          // 只有当批次有地址时才添加批次
+          if (batchAddresses.length > 0) {
+            preparedBatches.push({ addresses: batchAddresses });
+          }
         }
 
         return preparedBatches;
