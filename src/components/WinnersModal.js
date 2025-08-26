@@ -75,8 +75,8 @@ const WinnersModal = ({
         let verificationInfo = '';
         let githubInfo = '';
         if (lotteryResultInfo && lotteryResultInfo.isTipLottery) {
-            verificationInfo = `${LOTTERY_API_CONFIG.BASE_URL}/verify`;
-            githubInfo = `GitHub地址: [${lotteryResultInfo.githubCommit.repository}](${lotteryResultInfo.githubCommit.fileUrl})`;
+            verificationInfo = `验证地址: [${LOTTERY_API_CONFIG.BASE_URL}verify](${LOTTERY_API_CONFIG.BASE_URL}verify)`;
+            githubInfo = `GitHub元文件地址: [${lotteryResultInfo.githubCommit.repository}](${lotteryResultInfo.githubCommit.fileUrl})`;
         }
 
         // 构建最终文本，避免多余的空白行
