@@ -406,7 +406,7 @@ function App() {
       const buildBatchesBySize = async (addresses) => {
         const preparedBatches = [];
         let index = 0;
-        const MAX_TX_SIZE = 1232;
+        const MAX_TX_SIZE = 1030;
         const { blockhash: sizeEstimateBlockhash } = await connection.getLatestBlockhash();
 
         while (index < addresses.length) {
