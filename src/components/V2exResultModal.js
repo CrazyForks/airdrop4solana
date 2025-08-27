@@ -11,7 +11,8 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
   const [selectionCount, setSelectionCount] = useState(10);
   const [excludePostAuthor, setExcludePostAuthor] = useState(true);
   const [needAirdrop, setNeedAirdrop] = useState(true); // 新增：是否需要空投
-  const [showLotteryComplete, setShowLotteryComplete] = useState(false); // 新增：显示抽奖完成界面
+  const [excludeDuplicateUsers, setExcludeDuplicateUsers] = useState(true); // 新增：是否排除重复用户
+
   const [showLotteryCompleteModal, setShowLotteryCompleteModal] = useState(false); // 新增：显示抽奖完成模态框
   const [parsingAddresses, setParsingAddresses] = useState(false);
   const [parsingProgress, setParsingProgress] = useState({ current: 0, total: 0, percentage: 0 });
@@ -62,14 +63,10 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
     setShowLotterySettings(true);
   }, [onAddLog]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 处理抽奖完成模态框
-  const handleLotteryCompleteModal = useCallback(() => {
-    setShowLotteryCompleteModal(true);
-  }, []);
+
 
   // 显示抽奖设置
   const showLotterySettingsModal = useCallback(() => {
-    setShowLotteryComplete(false);
     setShowLotteryCompleteModal(false);
     setShowLotterySettings(true);
   }, []);
@@ -97,7 +94,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
         onAddLog(`🎯 抽奖设置：帖子作者 "${postAuthor}" 将被排除`, 'info');
       }
 
-      // 准备用户数据 - 从回复中提取
+      // 处理重复用户检测和排除
       let allUsers = result.detailedReplies.map((reply, index) => ({
         userId: reply.userId || `用户${index + 1}`,
         username: reply.userId || `用户${index + 1}`,
@@ -107,6 +104,85 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
         replyTime: reply.replyTime || '',
         floor: reply.floor || index + 1
       }));
+
+      // 如果启用排除重复用户，需要处理重复用户的情况
+      if (excludeDuplicateUsers) {
+        const userCountMap = new Map(); // 记录每个用户出现的次数
+        const duplicateUsers = new Set(); // 记录重复的用户
+
+        // 统计每个用户出现的次数
+        allUsers.forEach(user => {
+          const username = user.username;
+          if (userCountMap.has(username)) {
+            userCountMap.set(username, userCountMap.get(username) + 1);
+            duplicateUsers.add(username);
+          } else {
+            userCountMap.set(username, 1);
+          }
+        });
+
+        if (duplicateUsers.size > 0) {
+          onAddLog(`🔍 检测到 ${duplicateUsers.size} 个重复用户: ${Array.from(duplicateUsers).join(', ')}`, 'info');
+
+          // 对于重复用户，需要检查他们的多条回复中是否有多个不同的Solana地址
+          allUsers = allUsers.map(user => {
+            if (duplicateUsers.has(user.username)) {
+              const replyCount = userCountMap.get(user.username);
+              if (replyCount > 1) {
+                // 检查这个重复用户的所有回复中的地址
+                const userReplies = result.detailedReplies.filter(reply =>
+                  reply.userId === user.username
+                );
+
+                // 收集所有不重复的Solana地址
+                const uniqueAddresses = new Set();
+                userReplies.forEach(reply => {
+                  if (reply.solanaAddresses && reply.solanaAddresses.length > 0) {
+                    reply.solanaAddresses.forEach(addr => uniqueAddresses.add(addr));
+                  }
+                });
+
+                // 如果有多条回复且包含多个不同的Solana地址，按照没有地址处理
+                if (uniqueAddresses.size > 1) {
+                  onAddLog(`⚠️ 用户 ${user.username} 回复了 ${replyCount} 次，包含 ${uniqueAddresses.size} 个不同的Solana地址，标记为没有Solana地址`, 'warning');
+                  return {
+                    ...user,
+                    address: '',
+                    hasSolanaAddress: false,
+                    isDuplicateUser: true,
+                    duplicateCount: replyCount,
+                    duplicateAddresses: Array.from(uniqueAddresses)
+                  };
+                } else {
+                  // 如果只有1个地址或没有地址，正常处理
+                  onAddLog(`ℹ️ 用户 ${user.username} 回复了 ${replyCount} 次，但只有 ${uniqueAddresses.size} 个Solana地址，正常处理`, 'info');
+                  return {
+                    ...user,
+                    isDuplicateUser: true,
+                    duplicateCount: replyCount,
+                    duplicateAddresses: Array.from(uniqueAddresses)
+                  };
+                }
+              }
+            }
+            return user;
+          });
+
+          // 过滤掉重复用户，只保留第一次出现的
+          const seenUsers = new Set();
+          allUsers = allUsers.filter(user => {
+            if (seenUsers.has(user.username)) {
+              return false; // 过滤掉重复的用户
+            }
+            seenUsers.add(user.username);
+            return true;
+          });
+
+          onAddLog(`✅ 重复用户处理完成，可用用户数量: ${allUsers.length}`, 'info');
+        }
+      }
+
+      // 准备用户数据 - 从回复中提取（已在上面处理过重复用户）
 
       if (allUsers.length === 0) {
         onShowMessage('没有符合条件的用户进行抽奖', 'warning');
@@ -185,7 +261,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
             totalUsers: lotteryResult.totalUsers,
             drawCount: selectionCount,
             seed: lotterySeed,
-            environment:  LOTTERY_API_CONFIG.DEFAULT_ENVIRONMENT,
+            environment: LOTTERY_API_CONFIG.DEFAULT_ENVIRONMENT,
             githubCommit: lotteryResult.githubCommit,
             isTipLottery: true
           });
@@ -259,7 +335,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
       onAddLog(`抽奖失败: ${error.message}`, 'error');
       onShowMessage(`抽奖失败: ${error.message}`, 'error');
     }
-  }, [result?.detailedReplies, result?.author, selectionCount, excludePostAuthor, lotterySeed, onAddLog, onShowMessage, needAirdrop, onLotteryComplete]);
+  }, [result?.detailedReplies, result?.author, selectionCount, excludePostAuthor, excludeDuplicateUsers, lotterySeed, onAddLog, onShowMessage, needAirdrop, onLotteryComplete]);
 
   // 解析没有 Solana 地址的用户
   const parseMissingAddresses = useCallback(async () => {
@@ -420,6 +496,83 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
           floor: reply.floor || index + 1
         }));
 
+        // 如果启用排除重复用户，需要处理重复用户的情况
+        if (excludeDuplicateUsers) {
+          const userCountMap = new Map(); // 记录每个用户出现的次数
+          const duplicateUsers = new Set(); // 记录重复的用户
+
+          // 统计每个用户出现的次数
+          allUsers.forEach(user => {
+            const username = user.username;
+            if (userCountMap.has(username)) {
+              userCountMap.set(username, userCountMap.get(username) + 1);
+              duplicateUsers.add(username);
+            } else {
+              userCountMap.set(username, 1);
+            }
+          });
+
+          if (duplicateUsers.size > 0) {
+            onAddLog(`🔍 重新抽取时检测到 ${duplicateUsers.size} 个重复用户: ${Array.from(duplicateUsers).join(', ')}`, 'info');
+
+            // 对于重复用户，需要检查他们的多条回复中是否有多个不同的Solana地址
+            allUsers = allUsers.map(user => {
+              if (duplicateUsers.has(user.username)) {
+                const replyCount = userCountMap.get(user.username);
+                if (replyCount > 1) {
+                  // 检查这个重复用户的所有回复中的地址
+                  const userReplies = result.detailedReplies.filter(reply =>
+                    reply.userId === user.username
+                  );
+
+                  // 收集所有不重复的Solana地址
+                  const uniqueAddresses = new Set();
+                  userReplies.forEach(reply => {
+                    if (reply.solanaAddresses && reply.solanaAddresses.length > 0) {
+                      reply.solanaAddresses.forEach(addr => uniqueAddresses.add(addr));
+                    }
+                  });
+
+                  // 如果有多条回复且包含多个不同的Solana地址，按照没有地址处理
+                  if (uniqueAddresses.size > 1) {
+                    onAddLog(`⚠️ 重新抽取时用户 ${user.username} 回复了 ${replyCount} 次，包含 ${uniqueAddresses.size} 个不同的Solana地址，标记为没有Solana地址`, 'warning');
+                    return {
+                      ...user,
+                      address: '',
+                      hasSolanaAddress: false,
+                      isDuplicateUser: true,
+                      duplicateCount: replyCount,
+                      duplicateAddresses: Array.from(uniqueAddresses)
+                    };
+                  } else {
+                    // 如果只有1个地址或没有地址，正常处理
+                    onAddLog(`ℹ️ 重新抽取时用户 ${user.username} 回复了 ${replyCount} 次，但只有 ${uniqueAddresses.size} 个Solana地址，正常处理`, 'info');
+                    return {
+                      ...user,
+                      isDuplicateUser: true,
+                      duplicateCount: replyCount,
+                      duplicateAddresses: Array.from(uniqueAddresses)
+                    };
+                  }
+                }
+              }
+              return user;
+            });
+
+            // 过滤掉重复用户，只保留第一次出现的
+            const seenUsers = new Set();
+            allUsers = allUsers.filter(user => {
+              if (seenUsers.has(user.username)) {
+                return false; // 过滤掉重复的用户
+              }
+              seenUsers.add(user.username);
+              return true;
+            });
+
+            onAddLog(`✅ 重新抽取时重复用户处理完成，可用用户数量: ${allUsers.length}`, 'info');
+          }
+        }
+
         // 检查是否有足够的用户可供抽取（不预先过滤地址）
         if (allUsers.length <= excludeUsers.length) {
           onAddLog(`❌ 重新抽取失败：可用用户数量不足，需要 ${needMoreCount} 个，但只有 ${allUsers.length - excludeUsers.length} 个可用`, 'error');
@@ -473,7 +626,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
     // 关闭选项模态框
     setShowAddressOptionsModal(false);
     setUsersWithoutAddresses([]);
-  }, [selectedUsers, selectionCount, result?.detailedReplies, result?.author, excludePostAuthor, onAddLog, onShowMessage, usersWithoutAddresses.length, lotterySeed]);
+  }, [selectedUsers, selectionCount, result?.detailedReplies, result?.author, excludePostAuthor, excludeDuplicateUsers, onAddLog, onShowMessage, usersWithoutAddresses.length, lotterySeed]);
 
   // 应用抽奖结果
   const applyLotteryResult = useCallback(() => {
@@ -511,7 +664,6 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
   const resetLotteryResult = () => {
     setSelectedUsers([]);
     setShowLotterySettings(false);
-    setShowLotteryComplete(false);
     setShowLotteryCompleteModal(false);
     onAddLog('🔄 抽奖结果已重置', 'info');
   };
@@ -773,6 +925,26 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                           <span className="error-text">解析失败: {user.parseError}</span>
                         </div>
                       )}
+
+                      {/* 重复用户标识 */}
+                      {user.isDuplicateUser && (
+                        <div className="duplicate-user-info">
+                          <span className="duplicate-icon">🔄</span>
+                          <span className="duplicate-text">
+                            重复用户 (回复{user.duplicateCount}次)
+                            {user.duplicateAddresses && user.duplicateAddresses.length > 1 && (
+                              <span className="duplicate-addresses">
+                                - 包含{user.duplicateAddresses.length}个不同地址，按无地址处理
+                              </span>
+                            )}
+                            {user.duplicateAddresses && user.duplicateAddresses.length <= 1 && (
+                              <span className="duplicate-addresses">
+                                - 地址数量正常，可正常参与抽奖
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -808,82 +980,123 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
           {showLotterySettings && (
             <div className="lottery-settings-modal">
               <div className="lottery-settings-content">
-                <h4 className="section-title">抽奖设置</h4>
+                <div className="lottery-settings-header">
+                  <h4 className="section-title">
+                    抽奖设置
+                  </h4>
+                </div>
+
                 <div className="lottery-options">
-                  <div className="option-group-row">
-                    <div className="option-item">
-                      <label>
+                  {/* 第一行：基本设置 */}
+                  <div className="options-row">
+                    <div className="option-item compact">
+                      <label className="option-label">
                         <input
                           type="checkbox"
                           checked={excludePostAuthor}
                           onChange={(e) => setExcludePostAuthor(e.target.checked)}
+                          className="option-checkbox"
                         />
-                        排除帖子作者
+                        <span className="option-text">排除帖子作者</span>
                       </label>
                     </div>
-                    <div className="option-item">
-                      <label>
-                        数量:
+
+                    <div className="option-item compact">
+                      <label className="option-label">
+                        <span className="option-text">抽奖数量</span>
                         <input
                           type="number"
                           value={selectionCount}
                           onChange={(e) => setSelectionCount(parseInt(e.target.value) || 10)}
                           min="1"
                           max={result.detailedReplies.length}
+                          className="option-input"
                         />
                       </label>
                     </div>
                   </div>
 
-                  {/* 新增：空投设置选项 */}
-                  <div className="option-group-row">
-                    <div className="option-item">
-                      <label>
+                  {/* 第二行：功能选项 */}
+                  <div className="options-row">
+                    <div className="option-item compact">
+                      <label className="option-label">
                         <input
                           type="checkbox"
                           checked={needAirdrop}
                           onChange={(e) => setNeedAirdrop(e.target.checked)}
+                          className="option-checkbox"
                         />
-                        是否需要进行空投
+                        <span className="option-text">需要空投</span>
                       </label>
-                      <div className="option-description">
-                        {needAirdrop ?
-                          '选中：抽奖完成后需要解析Solana地址并进行空投操作' :
-                          '未选中：抽奖完成后直接显示结果，无需解析地址和空投'
-                        }
+                      <div className="option-hint">
+                        {needAirdrop ? '抽奖后解析地址并空投' : '仅抽奖，不解析地址'}
+                      </div>
+                    </div>
+
+                    <div className="option-item compact">
+                      <label className="option-label">
+                        <input
+                          type="checkbox"
+                          checked={excludeDuplicateUsers}
+                          onChange={(e) => setExcludeDuplicateUsers(e.target.checked)}
+                          className="option-checkbox"
+                        />
+                        <span className="option-text">排除重复用户</span>
+                      </label>
+                      <div className="option-hint">
+                        {excludeDuplicateUsers ? '检测多地址重复用户' : '不检测重复用户'}
                       </div>
                     </div>
                   </div>
 
                   {/* 抽奖信息预览 */}
-                  <div className="lottery-preview">
+                  <div className="lottery-preview compact">
                     <div className="preview-header">
+                      <svg className="preview-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 11H1l8-8 8 8h-8v8z" />
+                      </svg>
                       <span>抽奖预览</span>
                     </div>
                     <div className="preview-content">
-                      <div className="preview-item">
-                        <span className="preview-label">总回复数：</span>
-                        <span className="preview-value">{result.detailedReplies.length}</span>
+                      <div className="preview-row">
+                        <div className="preview-item">
+                          <span className="preview-label">总回复数</span>
+                          <span className="preview-value">{result.detailedReplies.length}</span>
+                        </div>
+                        <div className="preview-item">
+                          <span className="preview-label">抽奖数量</span>
+                          <span className="preview-value">{selectionCount}</span>
+                        </div>
                       </div>
-                      <div className="preview-item">
-                        <span className="preview-label">抽奖数量：</span>
-                        <span className="preview-value">{selectionCount}</span>
+                      <div className="preview-row">
+                        <div className="preview-item">
+                          <span className="preview-label">排除作者</span>
+                          <span className={`preview-value ${excludePostAuthor ? 'preview-active' : 'preview-inactive'}`}>
+                            {excludePostAuthor ? '是' : '否'}
+                          </span>
+                        </div>
+                        <div className="preview-item">
+                          <span className="preview-label">排除重复</span>
+                          <span className={`preview-value ${excludeDuplicateUsers ? 'preview-active' : 'preview-inactive'}`}>
+                            {excludeDuplicateUsers ? '是' : '否'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="preview-item">
-                        <span className="preview-label">排除作者：</span>
-                        <span className="preview-value">{excludePostAuthor ? '是' : '否'}</span>
-                      </div>
-                      <div className="preview-item">
-                        <span className="preview-label">空投模式：</span>
-                        <span className={`preview-value ${needAirdrop ? 'preview-active' : 'preview-inactive'}`}>
-                          {needAirdrop ? '需要空投' : '仅抽奖'}
-                        </span>
+                      <div className="preview-row">
+                        <div className="preview-item full-width">
+                          <span className="preview-label">空投模式</span>
+                          <span className={`preview-value ${needAirdrop ? 'preview-active' : 'preview-inactive'}`}>
+                            {needAirdrop ? '需要空投' : '仅抽奖'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
+
+                  {/* 操作按钮 */}
                   <div className="lottery-settings-actions">
                     <button
-                      className="btn btn-primary"
+                      className="btn btn-primary btn-large"
                       onClick={() => {
                         // 检查是否已经完成打赏流程
                         if (!lotterySeed) {
@@ -894,20 +1107,28 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                         executeRandomSelection();
                       }}
                     >
+                      <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                        <path d="M2 17l10 5 10-5" />
+                        <path d="M2 12l10 5 10-5" />
+                      </svg>
                       开始抽奖
                     </button>
-                    <button className="btn btn-outline" onClick={() => {
-                      if (defaultShowLottery) {
-                        // 如果是从抽奖操作进入的，直接关闭整个弹窗
-                        if (result.isLotteryOperation) {
-                          result.isLotteryOperation = false;
+                    <button
+                      className="btn btn-outline btn-large"
+                      onClick={() => {
+                        if (defaultShowLottery) {
+                          // 如果是从抽奖操作进入的，直接关闭整个弹窗
+                          if (result.isLotteryOperation) {
+                            result.isLotteryOperation = false;
+                          }
+                          onClose();
+                        } else {
+                          // 如果是从详情页进入的，只关闭抽奖设置
+                          setShowLotterySettings(false);
                         }
-                        onClose();
-                      } else {
-                        // 如果是从详情页进入的，只关闭抽奖设置
-                        setShowLotterySettings(false);
-                      }
-                    }}>
+                      }}
+                    >
                       取消
                     </button>
                   </div>

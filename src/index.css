@@ -4096,10 +4096,10 @@ select:focus-visible {
 }
 
 .lottery-settings-content .lottery-options {
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .lottery-settings-content .option-group-row {
@@ -4107,6 +4107,64 @@ select:focus-visible {
   flex-direction: row;
   align-items: center;
   gap: 24px;
+}
+
+/* 新的紧凑布局样式 */
+.lottery-settings-content .options-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.lottery-settings-content .option-item.compact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lottery-settings-content .option-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.lottery-settings-content .option-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.lottery-settings-content .option-text {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.lottery-settings-content .option-input {
+  padding: 6px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  width: 80px;
+  text-align: center;
+  margin-left: 8px;
+}
+
+.lottery-settings-content .option-hint {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-left: 24px;
+  line-height: 1.3;
+  max-width: 200px;
 }
 
 .lottery-settings-content .option-item {
@@ -4201,12 +4259,107 @@ select:focus-visible {
   margin-top: 8px;
 }
 
+/* 抽奖预览紧凑样式 */
+.lottery-preview.compact {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  overflow: hidden;
+}
+
+.lottery-preview.compact .preview-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lottery-preview.compact .preview-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--accent-info);
+}
+
+.lottery-preview.compact .preview-content {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lottery-preview.compact .preview-row {
+  display: flex;
+  gap: 16px;
+}
+
+.lottery-preview.compact .preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.lottery-preview.compact .preview-item.full-width {
+  flex: 2;
+}
+
+.lottery-preview.compact .preview-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.lottery-preview.compact .preview-value {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  border: 1px solid var(--border-primary);
+}
+
+.lottery-preview.compact .preview-value.preview-active {
+  background: var(--accent-success);
+  color: white;
+  border-color: var(--accent-success);
+}
+
+.lottery-preview.compact .preview-value.preview-inactive {
+  background: var(--bg-quaternary);
+  color: var(--text-tertiary);
+  border-color: var(--border-secondary);
+}
+
 .lottery-settings-actions .btn {
   min-width: 120px;
   min-height: 44px;
   padding: 12px 24px;
   font-size: 14px;
   font-weight: 600;
+}
+
+.lottery-settings-actions .btn.btn-large {
+  min-width: 140px;
+  min-height: 48px;
+  padding: 14px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
+.lottery-settings-actions .btn.btn-large .btn-icon {
+  width: 18px;
+  height: 18px;
 }
 
 /* 抽奖结果样式优化 - 与回复列表保持一致 */
