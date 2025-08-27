@@ -403,10 +403,10 @@ function App() {
       }
 
       // 智能分批处理
-     const buildBatchesBySize = async (addresses) => {
+      const buildBatchesBySize = async (addresses) => {
         const preparedBatches = [];
         let index = 0;
-        const MAX_TX_SIZE = 1030; // 保守设置为1030字节，留出安全余量
+        const MAX_TX_SIZE = 1232;
         const { blockhash: sizeEstimateBlockhash } = await connection.getLatestBlockhash();
 
         while (index < addresses.length) {
@@ -427,7 +427,7 @@ function App() {
               const toPubkey = new PublicKey(addr.publicKey);
               const toTokenAccount = await getAssociatedTokenAddress(tokenMint, toPubkey);
               const fromTokenAccount = await getAssociatedTokenAddress(tokenMint, fromPubkey);
-              
+
               // 添加创建关联账户指令（如果需要）
               tx.add(
                 createAssociatedTokenAccountInstruction(
@@ -437,7 +437,7 @@ function App() {
                   tokenMint
                 )
               );
-              
+
               // 添加转账指令
               tx.add(
                 createTransferInstruction(
@@ -800,7 +800,14 @@ function App() {
           allTransactionHashes: allTransactionHashes, // 传递所有批次的交易哈希
           postUrl: v2exParseResult?.sourceUrl || '',
           postTitle: v2exParseResult?.title || 'V2EX帖子',
-          lotteryResultInfo: prev.lotteryResultInfo // 保留之前的抽奖结果信息，而不是覆盖为null
+          lotteryResultInfo: {
+            ...prev.lotteryResultInfo,
+            // 添加空投金额信息
+            airdropAmount: airdropAmount,
+            tokenType: airdropType,
+            winnerCount: winnersData.length,
+            totalAmount: `${(parseFloat(airdropAmount) * winnersData.length).toFixed(6)} ${airdropType === 'v2ex' ? 'V2EX' : 'SOL'}`
+          }
         }));
         setShowWinnersModal(true);
 

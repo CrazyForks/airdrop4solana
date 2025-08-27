@@ -7,6 +7,7 @@
 const LOTTERY_API_CONFIG = {
     // 接口基础URL
     BASE_URL: 'https://lottey.grabcoffee.cc/',
+    // BASE_URL: 'http://localhost:61191/',
 
     // 接口端点
     ENDPOINTS: {
@@ -294,7 +295,7 @@ export const executeLotteryViaAPI = async (options) => {
             excludeUsers = [],
             drawCount,
             seed,
-            environment = 'prod',
+            environment = LOTTERY_API_CONFIG.DEFAULT_ENVIRONMENT,
             postInfo = {}
         } = options;
 

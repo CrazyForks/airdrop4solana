@@ -3,6 +3,7 @@ import { drawUsers, executeLotteryViaAPI, checkLotteryAPIStatus } from '../utils
 import { batchParseUserInfo } from '../utils/v2ex';
 import TipModal from './TipModal';
 import LotteryCompleteModal from './LotteryCompleteModal';
+import { LOTTERY_API_CONFIG } from '../utils/lottery';
 
 const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMessage, defaultShowLottery = false, userWallet, rpcEndpoint, connectWallet, onLotteryComplete }) => {
   const [showLotterySettings, setShowLotterySettings] = useState(defaultShowLottery);
@@ -155,7 +156,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
           excludeUsers: excludeUsers,
           drawCount: selectionCount,
           seed: lotterySeed,
-          environment: 'prod', // 使用测试环境，生产环境可设置为 'prod'
+          environment: LOTTERY_API_CONFIG.DEFAULT_ENVIRONMENT, // 使用测试环境，生产环境可设置为 'prod'
           postInfo: {
             postId: result.postId,
             title: result.title,
@@ -184,7 +185,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
             totalUsers: lotteryResult.totalUsers,
             drawCount: selectionCount,
             seed: lotterySeed,
-            environment: 'prod',
+            environment:  LOTTERY_API_CONFIG.DEFAULT_ENVIRONMENT,
             githubCommit: lotteryResult.githubCommit,
             isTipLottery: true
           });
@@ -196,7 +197,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
               totalUsers: lotteryResult.totalUsers,
               drawCount: selectionCount,
               seed: lotterySeed,
-              environment: 'prod',
+              environment: LOTTERY_API_CONFIG.DEFAULT_ENVIRONMENT,
               githubCommit: lotteryResult.githubCommit,
               isTipLottery: true
             });
@@ -234,7 +235,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
             totalUsers: allUsers.length,
             drawCount: selectionCount,
             seed: lotterySeed,
-            environment: 'prod',
+            environment: LOTTERY_API_CONFIG.DEFAULT_ENVIRONMENT,
             githubCommit: null,
             isTipLottery: false
           });

@@ -44,9 +44,9 @@ const WinnersModal = ({
                 txInfo = `TX: ${hash}`;
             } else {
                 // 多批次
-                txInfo = '交易哈希:\n' + allTransactionHashes.map(batch =>
+                txInfo = '交易哈希:\n\n' + allTransactionHashes.map(batch =>
                     `第${batch.batch}批次: ${batch.hash}`
-                ).join('\n');
+                ).join('\n\n');
             }
         } else if (transactionHash) {
             // 兼容旧版本
@@ -63,9 +63,9 @@ const WinnersModal = ({
                 explorerLinks = `查询链接: [${allTransactionHashes[0].hash}](https://explorer.solana.com/tx/${allTransactionHashes[0].hash})`;
             } else {
                 // 多批次
-                explorerLinks = '查询链接:\n' + allTransactionHashes.map(batch =>
+                explorerLinks = '查询链接:\n\n' + allTransactionHashes.map(batch =>
                     `第${batch.batch}批次: [${batch.hash}](https://explorer.solana.com/tx/${batch.hash})`
-                ).join('\n');
+                ).join('\n\n');
             }
         } else {
             explorerLinks = '查询链接: 请稍后查看Solana Explorer';
@@ -74,9 +74,51 @@ const WinnersModal = ({
         // 处理验证地址信息和github地址
         let verificationInfo = '';
         let githubInfo = '';
+        let seedInfo = '';
         if (lotteryResultInfo && lotteryResultInfo.isTipLottery) {
+            // 添加随机数种子信息
+            if (lotteryResultInfo.seed) {
+                seedInfo = `随机数种子: ${lotteryResultInfo.seed}`;
+            }
             verificationInfo = `验证地址: [${LOTTERY_API_CONFIG.BASE_URL}verify](${LOTTERY_API_CONFIG.BASE_URL}verify)`;
             githubInfo = `GitHub元文件地址: [${lotteryResultInfo.githubCommit.repository}](${lotteryResultInfo.githubCommit.fileUrl})`;
+        }
+
+        // 计算投放总额
+        let totalAmount = '未知';
+
+        // 从lotteryResultInfo中获取空投金额信息
+        if (lotteryResultInfo) {
+            if (lotteryResultInfo.airdropAmount && lotteryResultInfo.winnerCount) {
+                // 如果有空投金额和中奖人数，计算总额
+                const amount = parseFloat(lotteryResultInfo.airdropAmount);
+                const count = lotteryResultInfo.winnerCount || winners.length;
+                if (!isNaN(amount) && count > 0) {
+                    const total = (amount * count).toFixed(6);
+                    const tokenName = lotteryResultInfo.tokenType === 'v2ex' ? 'V2EX' : 'SOL';
+                    totalAmount = `${total} ${tokenName}`;
+                }
+            } else if (lotteryResultInfo.totalAmount) {
+                // 如果直接提供了总金额
+                totalAmount = lotteryResultInfo.totalAmount;
+            } else if (lotteryResultInfo.airdropAmount) {
+                // 如果只有空投金额，显示单次金额
+                const amount = parseFloat(lotteryResultInfo.airdropAmount);
+                if (!isNaN(amount)) {
+                    const tokenName = lotteryResultInfo.tokenType === 'v2ex' ? 'V2EX' : 'SOL';
+                    totalAmount = `${amount} ${tokenName} × ${winners.length} = ${(amount * winners.length).toFixed(6)} ${tokenName}`;
+                }
+            }
+        }
+
+        // 如果没有lotteryResultInfo，尝试从winners数组计算（如果有amount字段）
+        if (totalAmount === '未知' && winners.length > 0 && winners[0].amount) {
+            const amount = parseFloat(winners[0].amount);
+            if (!isNaN(amount)) {
+                const total = (amount * winners.length).toFixed(6);
+                const tokenName = tokenType === 'v2ex' ? 'V2EX' : 'SOL';
+                totalAmount = `${total} ${tokenName}`;
+            }
         }
 
         // 构建最终文本，避免多余的空白行
@@ -86,11 +128,18 @@ const WinnersModal = ({
 
 代币: ${getTokenDisplayName()}
 
+参与人数: ${lotteryResultInfo?.totalUsers || '未知'} 人
+中奖人数: ${lotteryResultInfo?.drawCount || winners.length} 人
+投放总额: ${totalAmount} 
+
 ${txInfo}
 
 ${explorerLinks}`;
 
         // 只有在有验证信息时才添加
+        if (seedInfo) {
+            finalText += `\n\n${seedInfo}`;
+        }
         if (verificationInfo) {
             finalText += `\n\n${verificationInfo}`;
         }
@@ -317,6 +366,13 @@ ${explorerLinks}`;
                         <div className="verification-info">
                             <h4>验证信息</h4>
                             <div className="verification-links">
+                                {/* 随机数种子信息 */}
+                                {lotteryResultInfo.seed && (
+                                    <div className="verification-item">
+                                        <span className="label">随机数种子:</span>
+                                        <span className="value seed-value">{lotteryResultInfo.seed}</span>
+                                    </div>
+                                )}
                                 <div className="verification-item">
                                     <span className="label">验证地址:</span>
                                     <a
