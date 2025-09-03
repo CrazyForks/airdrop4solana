@@ -51,7 +51,7 @@ const LotteryCompleteModal = ({
                 const topicIdMatch = postUrl.match(/\/t\/(\d+)/);
                 if (topicIdMatch) {
                     const topicId = topicIdMatch[1];
-                    const replyUrl = `https://www.v2ex.com/append/topic/${topicId}`;
+                    const replyUrl = `https://www.v2ex.com/t/${topicId}`;
                     window.open(replyUrl, '_blank', 'noopener,noreferrer');
                     onAddLog(`已跳转到帖子回复页: ${topicId}`, 'info');
                 } else {

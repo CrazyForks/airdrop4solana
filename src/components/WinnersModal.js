@@ -165,7 +165,7 @@ ${explorerLinks}`;
                 const topicIdMatch = postUrl.match(/\/t\/(\d+)/);
                 if (topicIdMatch) {
                     const topicId = topicIdMatch[1];
-                    const replyUrl = `https://www.v2ex.com/append/topic/${topicId}`;
+                    const replyUrl = `https://www.v2ex.com/t/${topicId}`;
                     window.open(replyUrl, '_blank', 'noopener,noreferrer');
                     onAddLog(`已跳转到帖子回复页: ${topicId}`, 'info');
                 } else {
@@ -338,7 +338,7 @@ ${explorerLinks}`;
                                 复制内容预览
                                 <span className="status-badge info">可复制</span>
                             </h4>
-                            <p className="preview-note">注意: 请使用Markdown格式发布</p>
+                            <p className="preview-note">注意: 请使用Markdown格式发布, 使用Append方式不会触发用户通知, 建议回复中添加一次, Append中添加一次</p>
                             <div className="help-tip">
                                 <svg className="help-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <circle cx="12" cy="12" r="10" />
