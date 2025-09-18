@@ -27,15 +27,59 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
   const [showAddressOptionsModal, setShowAddressOptionsModal] = useState(false);
   const [usersWithoutAddresses, setUsersWithoutAddresses] = useState([]);
 
+  // 新增：楼层区间筛选
+  const [floorStart, setFloorStart] = useState(''); // 起始楼层（字符串存储，输入更友好）
+  const [floorEnd, setFloorEnd] = useState('');   // 结束楼层
+
+  // 解析并标准化楼层区间
+  const parsedFloorStart = useMemo(() => {
+    const n = parseInt(floorStart, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [floorStart]);
+
+  const parsedFloorEnd = useMemo(() => {
+    const n = parseInt(floorEnd, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [floorEnd]);
+
+  // 根据楼层区间过滤回复
+  const filteredReplies = useMemo(() => {
+    const replies = result?.detailedReplies || [];
+    if (!replies.length) return [];
+
+    const start = parsedFloorStart;
+    const end = parsedFloorEnd;
+
+    // 无限制
+    if (start == null && end == null) return replies;
+
+    return replies.filter((reply, index) => {
+      const floor = reply.floor ?? index + 1;
+      if (start != null && end != null) return floor >= start && floor <= end;
+      if (start != null) return floor >= start;
+      if (end != null) return floor <= end;
+      return true;
+    });
+  }, [result?.detailedReplies, parsedFloorStart, parsedFloorEnd]);
+
+  const filteredReplyCount = filteredReplies.length;
+
   // 根据回复数量动态设置选择数量的默认值
   useEffect(() => {
     if (result?.detailedReplies) {
-      // 除以2 向上取整
+      // 初始默认值按总回复数设置
       const replyCount = result.detailedReplies.length;
       const defaultCount = Math.ceil(replyCount / 10);
       setSelectionCount(defaultCount);
     }
   }, [result?.detailedReplies]);
+
+  // 当楼层区间变化时，保证选择数量不超过可用回复数
+  useEffect(() => {
+    if (filteredReplyCount > 0 && selectionCount > filteredReplyCount) {
+      setSelectionCount(filteredReplyCount);
+    }
+  }, [filteredReplyCount, selectionCount]);
 
   // 检查帖子内容是否超过4行
   const isPostContentLong = result?.content && result.content.split('\n').length > 4;
@@ -95,14 +139,17 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
       }
 
       // 处理重复用户检测和排除
-      let allUsers = result.detailedReplies.map((reply, index) => ({
+      // 基于楼层区间的回复集合
+      const sourceReplies = filteredReplies;
+
+      let allUsers = sourceReplies.map((reply, index) => ({
         userId: reply.userId || `用户${index + 1}`,
         username: reply.userId || `用户${index + 1}`,
         address: reply.solanaAddresses && reply.solanaAddresses.length > 0 ? reply.solanaAddresses[0] : '',
         hasSolanaAddress: !!(reply.solanaAddresses && reply.solanaAddresses.length > 0),
         replyContent: reply.content || '',
         replyTime: reply.replyTime || '',
-        floor: reply.floor || index + 1
+        floor: reply.floor || (reply._computedFloor ?? index + 1)
       }));
 
       // 如果启用排除重复用户，需要处理重复用户的情况
@@ -130,7 +177,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
               const replyCount = userCountMap.get(user.username);
               if (replyCount > 1) {
                 // 检查这个重复用户的所有回复中的地址
-                const userReplies = result.detailedReplies.filter(reply =>
+                const userReplies = sourceReplies.filter(reply =>
                   reply.userId === user.username
                 );
 
@@ -187,6 +234,12 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
       if (allUsers.length === 0) {
         onShowMessage('没有符合条件的用户进行抽奖', 'warning');
         return;
+      }
+
+      // 在执行前校验抽奖数量不超过可用用户数
+      if (selectionCount > allUsers.length) {
+        onAddLog(`抽奖数量(${selectionCount})超过可用用户数(${allUsers.length})，已自动调整`, 'warning');
+        setSelectionCount(allUsers.length);
       }
 
       // 判断是否使用接口抽奖（打赏后的抽奖）
@@ -335,7 +388,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
       onAddLog(`抽奖失败: ${error.message}`, 'error');
       onShowMessage(`抽奖失败: ${error.message}`, 'error');
     }
-  }, [result?.detailedReplies, result?.author, selectionCount, excludePostAuthor, excludeDuplicateUsers, lotterySeed, onAddLog, onShowMessage, needAirdrop, onLotteryComplete]);
+  }, [result?.detailedReplies, result?.author, result?.postId, result?.title, result?.content, result?.replyCount, result?.sourceUrl, selectionCount, excludePostAuthor, excludeDuplicateUsers, lotterySeed, onAddLog, onShowMessage, needAirdrop, onLotteryComplete, filteredReplies]);
 
   // 解析没有 Solana 地址的用户
   const parseMissingAddresses = useCallback(async () => {
@@ -473,7 +526,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
 
     if (choice === 'replace') {
       // 选择重新抽取：排除没有地址的用户，重新抽取对应数量
-      const usersWithAddresses = selectedUsers.filter(user => user.address && user.address !== '');
+  const usersWithAddresses = selectedUsers.filter(user => user.address && user.address !== '');
       const needMoreCount = selectionCount - usersWithAddresses.length;
 
       if (needMoreCount > 0) {
@@ -485,15 +538,16 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
         const excludeUsernames = usersWithAddresses.map(u => u.username);
         excludeUsers.push(...excludeUsernames);
 
-        // 从原始回复中重新选择 - 不预先过滤地址，从所有用户中抽取
-        let allUsers = result.detailedReplies.map((reply, index) => ({
+        // 从（按楼层区间过滤后的）原始回复中重新选择 - 不预先过滤地址，从所有用户中抽取
+        const sourceReplies = filteredReplies;
+        let allUsers = sourceReplies.map((reply, index) => ({
           userId: reply.userId || `用户${index + 1}`,
           username: reply.userId || `用户${index + 1}`,
           address: reply.solanaAddresses && reply.solanaAddresses.length > 0 ? reply.solanaAddresses[0] : '',
           hasSolanaAddress: !!(reply.solanaAddresses && reply.solanaAddresses.length > 0),
           replyContent: reply.content || '',
           replyTime: reply.replyTime || '',
-          floor: reply.floor || index + 1
+          floor: reply.floor || (reply._computedFloor ?? index + 1)
         }));
 
         // 如果启用排除重复用户，需要处理重复用户的情况
@@ -521,7 +575,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                 const replyCount = userCountMap.get(user.username);
                 if (replyCount > 1) {
                   // 检查这个重复用户的所有回复中的地址
-                  const userReplies = result.detailedReplies.filter(reply =>
+                  const userReplies = sourceReplies.filter(reply =>
                     reply.userId === user.username
                   );
 
@@ -626,7 +680,7 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
     // 关闭选项模态框
     setShowAddressOptionsModal(false);
     setUsersWithoutAddresses([]);
-  }, [selectedUsers, selectionCount, result?.detailedReplies, result?.author, excludePostAuthor, excludeDuplicateUsers, onAddLog, onShowMessage, usersWithoutAddresses.length, lotterySeed]);
+  }, [selectedUsers, selectionCount, result?.author, excludePostAuthor, excludeDuplicateUsers, onAddLog, onShowMessage, usersWithoutAddresses.length, lotterySeed, filteredReplies]);
 
   // 应用抽奖结果
   const applyLotteryResult = useCallback(() => {
@@ -1007,14 +1061,53 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                         <input
                           type="number"
                           value={selectionCount}
-                          onChange={(e) => setSelectionCount(parseInt(e.target.value) || 10)}
+                          onChange={(e) => setSelectionCount(parseInt(e.target.value, 10) || 1)}
                           min="1"
-                          max={result.detailedReplies.length}
+                          max={filteredReplyCount || 1}
                           className="option-input"
                         />
                       </label>
                     </div>
                   </div>
+
+                  {/* 楼层区间设置 */}
+                  <div className="options-row">
+                    <div className="option-item compact">
+                      <label className="option-label">
+                        <span className="option-text">起始楼层</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          step={1}
+                          value={floorStart}
+                          onChange={(e) => setFloorStart(e.target.value)}
+                          placeholder="留空不限"
+                          className="option-input"
+                        />
+                      </label>
+                    </div>
+                    <div className="option-item compact">
+                      <label className="option-label">
+                        <span className="option-text">结束楼层</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          step={1}
+                          value={floorEnd}
+                          onChange={(e) => setFloorEnd(e.target.value)}
+                          placeholder="留空不限"
+                          className="option-input"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  {(parsedFloorStart != null && parsedFloorEnd != null && parsedFloorStart > parsedFloorEnd) && (
+                    <div className="option-hint" style={{ color: 'var(--warning-color)' }}>
+                      起始楼层不能大于结束楼层
+                    </div>
+                  )}
 
                   {/* 第二行：功能选项 */}
                   <div className="options-row">
@@ -1060,8 +1153,8 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                     <div className="preview-content">
                       <div className="preview-row">
                         <div className="preview-item">
-                          <span className="preview-label">总回复数</span>
-                          <span className="preview-value">{result.detailedReplies.length}</span>
+                          <span className="preview-label">参与回复数</span>
+                          <span className="preview-value">{filteredReplyCount} / {result.detailedReplies.length}</span>
                         </div>
                         <div className="preview-item">
                           <span className="preview-label">抽奖数量</span>
@@ -1069,6 +1162,10 @@ const V2exResultModal = ({ result, onClose, onApplyAddresses, onAddLog, onShowMe
                         </div>
                       </div>
                       <div className="preview-row">
+                        <div className="preview-item">
+                          <span className="preview-label">楼层区间</span>
+                          <span className="preview-value">{parsedFloorStart ?? '-'} ~ {parsedFloorEnd ?? '-'}{(parsedFloorStart == null && parsedFloorEnd == null) ? '（不限）' : ''}</span>
+                        </div>
                         <div className="preview-item">
                           <span className="preview-label">排除作者</span>
                           <span className={`preview-value ${excludePostAuthor ? 'preview-active' : 'preview-inactive'}`}>
