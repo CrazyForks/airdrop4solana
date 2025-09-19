@@ -6,11 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="社区批量发送演示工具：从 V2EX 帖子中提取 Solana 地址进行批量发送。无投资承诺，不收集助记词/私钥，风险自担。" />
-    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
-    <meta http-equiv="X-Frame-Options" content="DENY" />
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
     <meta name="referrer" content="no-referrer-when-downgrade" />
-    <!-- 基础 CSP（尽量宽松以避免影响功能，如需更严格可按需收敛域名） -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' https: data:; connect-src 'self' https: data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;" />
+  <!-- 基础 CSP（meta 版不包含 frame-ancestors；该指令通过服务器响应头下发） -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' https: data:; connect-src 'self' https: data:; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;" />
     <title>社区批量发送演示工具</title>
   </head>
   <body>
