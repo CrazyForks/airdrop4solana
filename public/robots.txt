@@ -1,0 +1,5 @@
+User-agent: *
+Disallow:
+
+# 明确声明站点为工具类演示，无欺诈意图
+# 若您发现安全问题，请访问 /.well-known/security.txt

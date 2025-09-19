@@ -12,6 +12,7 @@ import V2exResultModal from './components/V2exResultModal';
 import ConfigModal from './components/ConfigModal';
 import FloatingLogPanel from './components/FloatingLogPanel';
 import WinnersModal from './components/WinnersModal';
+import SafetyNotice from './components/SafetyNotice';
 
 // 工具函数导入
 import { useWallet } from './hooks/useWallet';
@@ -33,7 +34,7 @@ function App() {
   const [airdropAmount, setAirdropAmount] = useState('10'); // 默认V2EX代币金额
 
   // 新增：空投类型选择
-  const [airdropType, setAirdropType] = useState('v2ex'); // 'solana' 或 'v2ex'
+  const [airdropType, setAirdropType] = useState('solana'); // 'solana' 或 'v2ex'
 
   // 中奖人弹窗状态
   const [winnersInfo, setWinnersInfo] = useState({
@@ -1267,6 +1268,9 @@ function App() {
         tokenType={airdropType} // 新增：传递当前选择的代币类型
         lotteryResultInfo={winnersInfo.lotteryResultInfo} // 新增：传递抽奖结果信息
       />
+
+      {/* 安全与合规提示 */}
+      <SafetyNotice />
     </div>
   );
 }
